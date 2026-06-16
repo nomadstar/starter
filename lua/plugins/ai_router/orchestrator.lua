@@ -152,8 +152,28 @@ local function start_attention_beeper()
   end
 end
 
+_G._ai_router_file_complete = function(arglead, cmdline, cursorpos)
+   if arglead:match("^@") then
+      local prefix = arglead:sub(2)
+      local matches = vim.fn.glob(prefix .. "*", false, true)
+      local results = {}
+      for _, m in ipairs(matches) do
+         if vim.fn.isdirectory(m) == 1 then
+            table.insert(results, "@" .. m .. "/")
+         else
+            table.insert(results, "@" .. m)
+         end
+      end
+      return results
+   end
+   return {}
+end
+
 function M.start_orchestration()
-  vim.ui.input({ prompt = "Tarea para Agentes (Ej: Script en python para...): " }, function(user_prompt)
+  vim.ui.input({ 
+      prompt = "Tarea para Agentes (Ej: Script en python para...): ",
+      completion = "customlist,v:lua._ai_router_file_complete"
+  }, function(user_prompt)
     if not user_prompt or user_prompt == "" then return end
 
     local function inject_files(text)
