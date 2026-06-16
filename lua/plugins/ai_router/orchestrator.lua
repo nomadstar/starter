@@ -188,15 +188,53 @@ function M.start_orchestration()
     log("**Meta:** " .. user_prompt)
     log("---\n")
     
-    local max_iter = tonumber(get_env("AGENT_MAX_ITERATIONS", "3"))
-    local current_iter = 1
-    
-    local cwd = vim.fn.getcwd()
-    local tree = vim.fn.system("find . -maxdepth 2 -not -path '*/\\.*' | sort")
-    
-    local architecture_prompt = "You are an AI Architect. User wants: " .. user_prompt .. "\n\n[ENVIRONMENT CONTEXT]\nWorking Directory: " .. cwd .. "\nExisting Files:\n" .. tree .. "\nEvaluate the task's complexity. If it is very simple (e.g., small scripts, docs, single configs), write the FULL code yourself and start your response EXACTLY with 'MODE: EASY'. If it is complex (e.g., full apps, heavy logic, multiple files), do not write code, start your response EXACTLY with 'MODE: COMPLEX' and provide a concise technical plan. At the VERY END of your plan, list ALL the files that need to be created or modified, each on a new line starting EXACTLY with '[FILE] path/to/file'."
-    
-    log("> **[Arquitecto Cloud]** Analizando petición para minimizar tokens...\n")
+    local function process_urls_and_continue(prompt_text, callback)
+       local urls = {}
+       for url in prompt_text:gmatch("https?://[%w-_%.%?%.:/%+=&]+") do
+          table.insert(urls, url)
+       end
+       
+       if #urls == 0 then
+          callback(prompt_text)
+          return
+       end
+       
+       log("> 🌐 **[Sistema]** Detectadas " .. #urls .. " URLs. Obteniendo contexto vía Jina Reader (timeout 10s)...")
+       local new_prompt = prompt_text
+       local completed = 0
+       
+       for _, url in ipairs(urls) do
+          curl.get("https://r.jina.ai/" .. url, {
+             timeout = 10000,
+             callback = function(res)
+                vim.schedule(function()
+                   completed = completed + 1
+                   if res.status == 200 then
+                      log("> 🟢 Descarga exitosa: " .. url)
+                      new_prompt = new_prompt .. "\n\n[WEB CONTEXT: " .. url .. "]\n" .. res.body .. "\n[END WEB CONTEXT]\n"
+                   else
+                      log("> 🔴 Error al descargar " .. url .. " (Status: " .. res.status .. "). Ignorando.")
+                   end
+                   
+                   if completed == #urls then
+                      callback(new_prompt)
+                   end
+                end)
+             end
+          })
+       end
+    end
+
+    process_urls_and_continue(user_prompt, function(final_prompt)
+       local max_iter = tonumber(get_env("AGENT_MAX_ITERATIONS", "3"))
+       local current_iter = 1
+       
+       local cwd = vim.fn.getcwd()
+       local tree = vim.fn.system("find . -maxdepth 2 -not -path '*/\\.*' | sort")
+       
+       local architecture_prompt = "You are an AI Architect. User wants: " .. final_prompt .. "\n\n[ENVIRONMENT CONTEXT]\nWorking Directory: " .. cwd .. "\nExisting Files:\n" .. tree .. "\nEvaluate the task's complexity. If it is very simple (e.g., small scripts, docs, single configs), write the FULL code yourself and start your response EXACTLY with 'MODE: EASY'. If it is complex (e.g., full apps, heavy logic, multiple files), do not write code, start your response EXACTLY with 'MODE: COMPLEX' and provide a concise technical plan. At the VERY END of your plan, list ALL the files that need to be created or modified, each on a new line starting EXACTLY with '[FILE] path/to/file'."
+       
+       log("> **[Arquitecto Cloud]** Analizando petición para minimizar tokens...\n")
     
     local function execute_architecture(arch_response)
       log("> **[Arquitecto] Plan generado:**\n" .. arch_response)
@@ -470,6 +508,7 @@ function M.start_orchestration()
          return
       end
       execute_architecture(arch_response)
+    end)
     end)
   end)
 end
