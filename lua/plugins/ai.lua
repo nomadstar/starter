@@ -6,9 +6,16 @@ return {
       "nvim-treesitter/nvim-treesitter",
     },
     keys = {
-      { "<leader>ac", "<cmd>CodeCompanionRouted<cr>", desc = "AI Chat (Routed)", mode = { "n", "v" } },
+      { "<leader>ac", function()
+          if vim.env.AI_ROUTER_MODE == "3" then
+            require('plugins.ai_router.orchestrator').start_orchestration()
+          else
+            vim.cmd("CodeCompanionRouted")
+          end
+        end, desc = "AI Chat (Routed/Iterative)", mode = { "n", "v" } },
       { "<leader>ai", "<cmd>CodeCompanionRoutedInline<cr>", desc = "AI Inline (Routed)", mode = { "n", "v" } },
       { "<leader>af", "<cmd>AIRouterReportFailure<cr>", desc = "Report AI Failure (Fallback)", mode = "n" },
+      { "<leader>am", "<cmd>lua require('plugins.ai_router.orchestrator').start_orchestration()<cr>", desc = "AI Multi-Agent (Cloud+Ollama)", mode = "n" },
     },
     config = function()
       local credentials = require("plugins.ai_router.credentials")
@@ -27,11 +34,19 @@ return {
           end
         end
 
+        local system_prompt = "You are a helpful AI assistant."
+        if vim.env.CAVEMAN_MODE == "true" then
+          system_prompt = "Talk like caveman. Cut filler words. Use minimal grammar. Keep technical accuracy. Shortest possible output."
+        end
+
         -- Configuración dinámica según el fallback
         local opts = {
           strategies = {
             chat = { adapter = best_provider },
             inline = { adapter = best_provider },
+          },
+          opts = {
+            system_prompt = system_prompt,
           },
         }
 
@@ -43,6 +58,40 @@ return {
                 schema = {
                   model = {
                     default = model,
+                  }
+                }
+              })
+            end,
+          }
+        elseif best_provider == "openrouter" then
+          opts.adapters = {
+            openrouter = function()
+              return require("codecompanion.adapters").extend("openai", {
+                name = "openrouter",
+                url = "https://openrouter.ai/api/v1/chat/completions",
+                env = {
+                  api_key = vim.env.OPENROUTER_API_KEY,
+                },
+                schema = {
+                  model = {
+                    default = "meta-llama/llama-3-8b-instruct",
+                  }
+                }
+              })
+            end,
+          }
+        elseif best_provider == "together" then
+          opts.adapters = {
+            together = function()
+              return require("codecompanion.adapters").extend("openai", {
+                name = "together",
+                url = "https://api.together.xyz/v1/chat/completions",
+                env = {
+                  api_key = vim.env.TOGETHER_API_KEY,
+                },
+                schema = {
+                  model = {
+                    default = "meta-llama/Llama-3-8b-chat-hf",
                   }
                 }
               })

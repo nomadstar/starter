@@ -29,16 +29,19 @@ Estas IAs están conectadas al sistema de enrutamiento y fallback. Si una agota 
    - **Link:** [Google AI Studio](https://aistudio.google.com/app/apikey)
    - **Instrucciones:** Entra con tu cuenta de Google, haz clic en "Create API key". Ofrece una de las capas gratuitas más grandes disponibles actualmente. Nómbrala `GEMINI_API_KEY`.
 
-4. **Ollama (Modelos Locales - Fallback de emergencia)**
+4. **Agregadores Universales (Cientos de modelos en una sola llave)**
+   - Estos servicios te permiten acceder a modelos open-source (Llama, Mistral, DeepSeek) e incluso a modelos cerrados, pagando solo por lo que usas o accediendo a capas gratuitas.
+   - **OpenRouter:** [Consigue tu llave aquí](https://openrouter.ai/keys) y guárdala como `OPENROUTER_API_KEY`.
+   - **Together AI:** [Consigue tu llave aquí](https://api.together.xyz/settings/api-keys) y guárdala como `TOGETHER_API_KEY`. (Juega con ventajas de latencia al hospedar en sus propios clusters LPU/GPU).
+
+5. **Ollama (Modelos Locales - Fallback de emergencia)**
    - **Link:** [Descargar Ollama](https://ollama.com/)
    - **Instrucciones:** Instala Ollama en tu máquina. Luego corre en tu terminal local un comando como `ollama run llama3`. El router de Neovim usará subprocesos para detectar automáticamente todos los modelos que tengas instalados. ¡No necesita API Key y funciona sin internet!
 
 ---
 
 ### ⏳ Proveedores Faltantes (Siguientes Pasos):
-Los siguientes motores son compatibles con la arquitectura actual, pero requieren extender las funciones de `credentials.lua` y `metrics.lua` para unirse al fallback:
+Los siguientes motores directos son compatibles, pero la mayoría ya están cubiertos bajo el paraguas de **OpenRouter** y **Together AI**:
 
-- **DeepSeek:** Excelente relación costo/calidad en razonamiento de código.
-- **Groq:** Para inferencia de modelos open-source en la nube a velocidades vertiginosas (LPU).
-- **Mistral API:** Los modelos europeos (Mixtral/Mistral Large) como una sólida alternativa de alto rendimiento.
-- **Cohere:** Excelentes modelos centrados en enterprise y bases de conocimiento.
+- **Mistral API Directa:** Los modelos europeos (Mixtral/Mistral Large) como una alternativa de alto rendimiento directa del proveedor.
+- **Cohere:** Excelentes modelos centrados en enterprise y bases de conocimiento directas.

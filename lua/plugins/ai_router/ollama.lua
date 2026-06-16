@@ -6,7 +6,8 @@ function M.get_models()
     return M._cached_models
   end
   
-  local handle = io.popen("ollama list | tail -n +2 | awk '{print $1}' 2>/dev/null")
+  local cmd = vim.env.OLLAMA_CMD or "ollama"
+  local handle = io.popen(cmd .. " list | tail -n +2 | awk '{print $1}' 2>/dev/null")
   if handle then
     local result = handle:read("*a")
     handle:close()

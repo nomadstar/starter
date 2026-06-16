@@ -20,7 +20,9 @@ function M.require_key(provider)
   local key_map = {
     openai = { env = "OPENAI_API_KEY", url = "https://platform.openai.com/api-keys" },
     anthropic = { env = "ANTHROPIC_API_KEY", url = "https://console.anthropic.com/settings/keys" },
-    gemini = { env = "GEMINI_API_KEY", url = "https://aistudio.google.com/app/apikey" }
+    gemini = { env = "GEMINI_API_KEY", url = "https://aistudio.google.com/app/apikey" },
+    openrouter = { env = "OPENROUTER_API_KEY", url = "https://openrouter.ai/keys" },
+    together = { env = "TOGETHER_API_KEY", url = "https://api.together.xyz/settings/api-keys" }
   }
   
   local info = key_map[provider]

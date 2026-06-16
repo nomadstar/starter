@@ -5,7 +5,9 @@ local state = {
   providers = {
     anthropic = { max_tokens = 50000, current_usage = 0, recent_failures = {} },
     openai = { max_tokens = 50000, current_usage = 0, recent_failures = {} },
-    gemini = { max_tokens = 50000, current_usage = 0, recent_failures = {} }
+    gemini = { max_tokens = 50000, current_usage = 0, recent_failures = {} },
+    openrouter = { max_tokens = 50000, current_usage = 0, recent_failures = {} },
+    together = { max_tokens = 50000, current_usage = 0, recent_failures = {} }
   }
 }
 
@@ -37,7 +39,13 @@ end
 load_state()
 
 function M.get_best_provider()
-  local ordered = {"anthropic", "openai", "gemini"}
+  local mode = vim.env.AI_ROUTER_MODE or "4"
+  
+  if mode == "2" then
+    return "ollama"
+  end
+
+  local ordered = {"anthropic", "openai", "gemini", "openrouter", "together"}
   
   for _, p in ipairs(ordered) do
     local p_state = state.providers[p]
@@ -46,6 +54,10 @@ function M.get_best_provider()
          return p
       end
     end
+  end
+  
+  if mode == "1" then
+    return nil -- No fallback to local in Full Cloud mode
   end
   
   local ollama = require("plugins.ai_router.ollama")
