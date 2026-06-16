@@ -182,9 +182,12 @@ function M.start_orchestration()
       log("> **[Arquitecto] Plan generado:**\n" .. arch_response)
       log("\n---\n")
       
-      local function do_iteration(comments)
+      local function do_iteration(comments, previous_code)
          log("> **[Ollama Local (Turboquant)]** Iteración " .. current_iter .. "/" .. max_iter .. ". Escribiendo código...\n")
          local ollama_prompt = "You are a Developer. Write the full code for this plan:\n" .. arch_response
+         if previous_code then
+            ollama_prompt = ollama_prompt .. "\n\nHere is your previously generated code that failed review:\n```\n" .. previous_code .. "\n```\n"
+         end
          if comments then
             ollama_prompt = ollama_prompt .. "\n\nFix the code based on the Architect's review:\n" .. comments
          end
@@ -275,7 +278,7 @@ function M.start_orchestration()
                      log("\n--- ÚLTIMO CÓDIGO ---\n" .. code_response)
                   else
                      log("\n---\n")
-                     do_iteration(review_response)
+                     do_iteration(review_response, code_response)
                   end
                end
             end
@@ -322,7 +325,7 @@ function M.start_orchestration()
                   end)
               else
                   log("> ✅ **Plan Aprobado por el Usuario. Iniciando desarrollo...**\n")
-                  do_iteration(nil)
+                  do_iteration(nil, nil)
               end
           end)
       end)
