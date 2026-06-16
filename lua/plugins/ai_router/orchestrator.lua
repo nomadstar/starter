@@ -174,7 +174,10 @@ function M.start_orchestration()
     local max_iter = tonumber(get_env("AGENT_MAX_ITERATIONS", "3"))
     local current_iter = 1
     
-    local architecture_prompt = "You are an AI Architect. User wants: " .. user_prompt .. "\nEvaluate the task's complexity. If it is very simple (e.g., small scripts, docs, single configs), write the FULL code yourself and start your response EXACTLY with 'MODE: EASY'. If it is complex (e.g., full apps, heavy logic, multiple files), do not write code, start your response EXACTLY with 'MODE: COMPLEX' and provide ONLY a concise technical plan and pseudocode to solve this. Minimize your response to save tokens."
+    local cwd = vim.fn.getcwd()
+    local tree = vim.fn.system("find . -maxdepth 2 -not -path '*/\\.*' | sort")
+    
+    local architecture_prompt = "You are an AI Architect. User wants: " .. user_prompt .. "\n\n[ENVIRONMENT CONTEXT]\nWorking Directory: " .. cwd .. "\nExisting Files:\n" .. tree .. "\nEvaluate the task's complexity. If it is very simple (e.g., small scripts, docs, single configs), write the FULL code yourself and start your response EXACTLY with 'MODE: EASY'. If it is complex (e.g., full apps, heavy logic, multiple files), do not write code, start your response EXACTLY with 'MODE: COMPLEX' and provide ONLY a concise technical plan and pseudocode to solve this. Minimize your response to save tokens."
     
     log("> **[Arquitecto Cloud]** Analizando petición para minimizar tokens...\n")
     
