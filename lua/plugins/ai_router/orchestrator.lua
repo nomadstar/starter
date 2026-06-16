@@ -47,6 +47,11 @@ local function call_cloud(prompt, callback)
       },
       callback = function(res)
         if res.status ~= 200 then
+          if (res.status == 401 or res.status == 403 or res.status == 429) then
+            vim.schedule(function() callback("ERROR Cloud (" .. current_model .. "): " .. res.status .. " " .. res.body) end)
+            return
+          end
+
           if index < #models then
             vim.schedule(function()
               vim.notify("Falló modelo " .. current_model .. " (" .. res.status .. "), intentando con el siguiente...", vim.log.levels.WARN)
@@ -58,7 +63,7 @@ local function call_cloud(prompt, callback)
           return
         end
         local data = vim.json.decode(res.body)
-        local text = data.choices[1].message.content
+        local text = data.choices and data.choices[1] and data.choices[1].message and data.choices[1].message.content or "Error: Unexpected API response"
         vim.schedule(function() callback(text) end)
       end
     })
@@ -129,12 +134,8 @@ function M.start_orchestration()
     
     log("> **[Arquitecto Cloud]** Analizando petición para minimizar tokens...\n")
     
-    call_cloud(architecture_prompt, function(arch_response)
-      if arch_response:match("^ERROR") then
-         log(arch_response)
-         return
-      end
-      log("> **[Arquitecto Cloud] Plan generado:**\n" .. arch_response)
+    local function execute_architecture(arch_response)
+      log("> **[Arquitecto] Plan generado:**\n" .. arch_response)
       log("\n---\n")
       
       local function do_iteration(comments)
@@ -155,21 +156,16 @@ function M.start_orchestration()
             
             local review_prompt = "You are the Architect. Review this code against your plan:\n\nCODE:\n" .. code_response .. "\n\nPLAN:\n" .. arch_response .. "\n\nIf the code works perfectly and implements the plan, reply EXACTLY with the word 'APPROVED' (nothing else). If it has bugs or issues, reply with a very concise list of fixes."
             
-            call_cloud(review_prompt, function(review_response)
-               if review_response:match("^ERROR") then
-                  log(review_response)
-                  return
-               end
-               
+            local function handle_review(review_response)
                if review_response:match("APPROVED") then
-                  log("### ✅ [Arquitecto Cloud] Código APROBADO en la iteración " .. current_iter .. "!")
+                  log("### ✅ [Arquitecto] Código APROBADO en la iteración " .. current_iter .. "!")
                   log("\n--- CÓDIGO FINAL ---\n" .. code_response)
                   
                   local raw_code = code_response:match("```[%w]*\n(.-)```") or code_response
                   vim.fn.setreg("+", raw_code)
                   log("\n> 📋 **El código final ha sido copiado a tu portapapeles (+).**")
                else
-                  log("### ❌ [Arquitecto Cloud] Revisión fallida. Comentarios:\n" .. review_response)
+                  log("### ❌ [Arquitecto] Revisión fallida. Comentarios:\n" .. review_response)
                   current_iter = current_iter + 1
                   if current_iter > max_iter then
                      log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado. Abortando.")
@@ -179,11 +175,43 @@ function M.start_orchestration()
                      do_iteration(review_response)
                   end
                end
+            end
+
+            call_cloud(review_prompt, function(review_response)
+               if review_response:match("^ERROR") then
+                  log(review_response)
+                  log("\n> ⚠️ **[Sistema]** Falló el Revisor Cloud. Iniciando fallback a Ollama...\n")
+                  call_ollama(review_prompt, function(fallback_review)
+                     if fallback_review:match("^ERROR") then
+                        log(fallback_review)
+                        return
+                     end
+                     handle_review(fallback_review)
+                  end)
+                  return
+               end
+               handle_review(review_response)
             end)
          end)
       end
       
       do_iteration(nil)
+    end
+
+    call_cloud(architecture_prompt, function(arch_response)
+      if arch_response:match("^ERROR") then
+         log(arch_response)
+         log("\n> ⚠️ **[Sistema]** Falló el Arquitecto Cloud. Iniciando fallback a Ollama...\n")
+         call_ollama(architecture_prompt, function(fallback_arch)
+             if fallback_arch:match("^ERROR") then
+                 log(fallback_arch)
+                 return
+             end
+             execute_architecture(fallback_arch)
+         end)
+         return
+      end
+      execute_architecture(arch_response)
     end)
   end)
 end
