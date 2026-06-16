@@ -197,19 +197,29 @@ function M.start_orchestration()
                         f:close()
                         vim.fn.system("chmod +x deploy_ai.sh")
                         log("\n> 💾 **Script guardado como `deploy_ai.sh` en el directorio actual.**")
-                        log("\n> 🚀 **Ejecutando script automáticamente para crear el entorno...**")
-                        local output = vim.fn.system("./deploy_ai.sh")
-                        log("\n> 📋 **Salida del despliegue:**\n" .. (output == "" and "Archivos creados con éxito." or output))
                         
-                        vim.defer_fn(function()
-                           if vim.api.nvim_win_is_valid(win) then
-                               vim.api.nvim_win_close(win, true)
-                           end
-                           if vim.api.nvim_buf_is_valid(buf) then
-                               vim.api.nvim_buf_delete(buf, { force = true })
-                           end
-                           vim.notify("Orquestador finalizado y buffer cerrado para ahorrar memoria.", vim.log.levels.INFO)
-                        end, 3000)
+                        vim.schedule(function()
+                            vim.cmd("split deploy_ai.sh")
+                            local choice = vim.fn.confirm("¿Permitir al Arquitecto ejecutar deploy_ai.sh en tu entorno?", "&Sí\n&No", 2)
+                            
+                            if choice == 1 then
+                                log("\n> 🚀 **Ejecutando script automáticamente para crear el entorno...**")
+                                local output = vim.fn.system("./deploy_ai.sh")
+                                log("\n> 📋 **Salida del despliegue:**\n" .. (output == "" and "Archivos creados con éxito." or output))
+                                
+                                vim.defer_fn(function()
+                                   if vim.api.nvim_win_is_valid(win) then
+                                       vim.api.nvim_win_close(win, true)
+                                   end
+                                   if vim.api.nvim_buf_is_valid(buf) then
+                                       vim.api.nvim_buf_delete(buf, { force = true })
+                                   end
+                                   vim.notify("Orquestador finalizado y buffer cerrado para ahorrar memoria.", vim.log.levels.INFO)
+                                end, 3000)
+                            else
+                                log("\n> 🛑 **Despliegue cancelado. Puedes revisar y ejecutar `deploy_ai.sh` manualmente.**")
+                            end
+                        end)
                      else
                         log("\n> ⚠️ **Error al guardar deploy_ai.sh**")
                      end
@@ -257,7 +267,32 @@ function M.start_orchestration()
          end)
       end
       
-      do_iteration(nil)
+      vim.schedule(function()
+          vim.ui.input({ prompt = "Feedback al Arquitecto (Vacío para APROBAR): " }, function(feedback)
+              if feedback and feedback ~= "" then
+                  log("> **[Usuario] Feedback al Arquitecto:** " .. feedback .. "\n")
+                  log("> **[Arquitecto Cloud]** Revisando plan...\n")
+                  
+                  local revision_prompt = "You are an AI Architect. Here is your previous plan:\n" .. arch_response .. "\n\nThe user provided this feedback: " .. feedback .. "\n\nPlease revise the plan accordingly. Provide ONLY the revised concise technical plan and pseudocode."
+                  
+                  call_cloud(revision_prompt, function(revised_response)
+                     if revised_response:match("^ERROR") then
+                        log(revised_response)
+                        log("\n> ⚠️ **[Sistema]** Falló el Arquitecto Cloud en la revisión. Fallback a Ollama...\n")
+                        call_ollama(revision_prompt, function(fallback_rev)
+                           if fallback_rev:match("^ERROR") then log(fallback_rev) return end
+                           execute_architecture(fallback_rev)
+                        end)
+                        return
+                     end
+                     execute_architecture(revised_response)
+                  end)
+              else
+                  log("> ✅ **Plan Aprobado por el Usuario. Iniciando desarrollo...**\n")
+                  do_iteration(nil)
+              end
+          end)
+      end)
     end
 
     call_cloud(architecture_prompt, function(arch_response)
