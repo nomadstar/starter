@@ -47,7 +47,7 @@ local function call_cloud(prompt, callback)
       },
       callback = function(res)
         if res.status ~= 200 then
-          if (res.status == 401 or res.status == 403 or res.status == 429) then
+          if (res.status == 401 or res.status == 403) then
             vim.schedule(function() callback("ERROR Cloud (" .. current_model .. "): " .. res.status .. " " .. res.body) end)
             return
           end
@@ -165,6 +165,7 @@ function M.start_orchestration()
                   local raw_code = code_response:match("```[%w]*\n(.-)```") or code_response
                   
                   if file_path and file_path ~= "" then
+                     vim.fn.mkdir(vim.fn.fnamemodify(file_path, ":h"), "p")
                      local f = io.open(file_path, "w")
                      if f then
                         f:write(raw_code)
