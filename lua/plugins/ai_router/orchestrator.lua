@@ -10,7 +10,8 @@ end
 local function call_cloud(prompt, callback)
   local url = get_env("AGENT_CLOUD_URL", "https://openrouter.ai/api/v1/chat/completions")
   local key = get_env("OPENROUTER_API_KEY", "")
-  local model = get_env("AGENT_CLOUD_MODEL", "meta-llama/llama-3-8b-instruct")
+  local model_env = get_env("AGENT_CLOUD_MODEL", "meta-llama/llama-3-8b-instruct")
+  local models = vim.split(model_env, ",")
 
   if key == "" then
      vim.schedule(function()
@@ -24,31 +25,46 @@ local function call_cloud(prompt, callback)
     system_prompt = "Talk like caveman. Cut filler words. Use minimal grammar. Keep technical accuracy. Shortest possible output."
   end
 
-  local body = vim.json.encode({
-    model = model,
-    messages = {
-      { role = "system", content = system_prompt },
-      { role = "user", content = prompt }
-    },
-    temperature = 0.2
-  })
+  local function try_model(index)
+    local current_model = models[index]
+    if not current_model then return end
+    current_model = vim.trim(current_model)
 
-  curl.post(url, {
-    body = body,
-    headers = {
-      ["Content-Type"] = "application/json",
-      ["Authorization"] = "Bearer " .. key
-    },
-    callback = function(res)
-      if res.status ~= 200 then
-        vim.schedule(function() callback("ERROR Cloud: " .. res.status .. " " .. res.body) end)
-        return
+    local body = vim.json.encode({
+      model = current_model,
+      messages = {
+        { role = "system", content = system_prompt },
+        { role = "user", content = prompt }
+      },
+      temperature = 0.2
+    })
+
+    curl.post(url, {
+      body = body,
+      headers = {
+        ["Content-Type"] = "application/json",
+        ["Authorization"] = "Bearer " .. key
+      },
+      callback = function(res)
+        if res.status ~= 200 then
+          if index < #models then
+            vim.schedule(function()
+              vim.notify("Falló modelo " .. current_model .. " (" .. res.status .. "), intentando con el siguiente...", vim.log.levels.WARN)
+              try_model(index + 1)
+            end)
+          else
+            vim.schedule(function() callback("ERROR Cloud (" .. current_model .. "): " .. res.status .. " " .. res.body) end)
+          end
+          return
+        end
+        local data = vim.json.decode(res.body)
+        local text = data.choices[1].message.content
+        vim.schedule(function() callback(text) end)
       end
-      local data = vim.json.decode(res.body)
-      local text = data.choices[1].message.content
-      vim.schedule(function() callback(text) end)
-    end
-  })
+    })
+  end
+
+  try_model(1)
 end
 
 local function call_ollama(prompt, callback)
