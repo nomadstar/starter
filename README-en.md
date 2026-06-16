@@ -30,6 +30,7 @@ All security and system behavior are controlled by a single file called **`.env`
 
 - **Credentials:** `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `TOGETHER_API_KEY`.
 - **Local Paths:** `OLLAMA_CMD` (Points to your custom Turboquant binary) and `OLLAMA_HOST`.
+- **Orchestrator:** `AGENT_MAX_ITERATIONS` (Correction attempts), `AGENT_NOISY_MODE` (Attention beep), `AGENT_CLOUD_MODEL`, `AGENT_LOCAL_MODEL`.
 
 ### Operation Modes (`AI_ROUTER_MODE`)
 You can change the editor's global behavior by modifying this variable:
@@ -40,6 +41,16 @@ You can change the editor's global behavior by modifying this variable:
 
 ### Caveman Mode (`CAVEMAN_MODE="true"`)
 Based on the principle of *"why waste time say lot word when few word do trick"*. When activated, the Router injects deep instructions that forbid the AI from using greetings, long explanations, or complex grammar. It will deliver telegraphic language and raw code, drastically reducing your token costs by up to 75%.
+
+## 🤖 Multi-Agent Orchestrator (Mode 3 / `<leader>am`)
+
+The Orchestrator is the crown jewel of this environment. It's a fully asynchronous master-slave workflow where you act as the Director:
+
+1. **Context Injection:** When prompted for a task, you can inject entire files by typing `@path/to/file` (e.g., `Refactor @src/main.rs using @MANIFESTO.md`).
+2. **Design Chat:** First, the **Cloud Architect** will generate a plan. The system will pause and ask for your *Feedback*. You can iteratively discuss the plan with the Architect until you are satisfied (leave the text box empty to approve).
+3. **Automatic Iterations:** Once you approve the plan, the **Local Developer** (Ollama) will write the code. The Architect will review it and demand fixes automatically (up to the `AGENT_MAX_ITERATIONS` limit).
+4. **Safe Deployment:** Upon completion, the Architect will generate a Bash script (`deploy_ai.sh`) to physically create all folders and files. It will show you the script in a split screen and ask for confirmation before executing it.
+5. **Noisy Mode:** Since this process is asynchronous, you can enable `AGENT_NOISY_MODE="true"` in your `.env`. Neovim will emit a soft beep every 5 seconds when the process stops and needs your confirmation, so you can safely step away from the computer.
 
 ## ⌨️ Commands and Keymaps
 
