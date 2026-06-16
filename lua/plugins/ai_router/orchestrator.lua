@@ -63,7 +63,7 @@ local function call_cloud(prompt, callback)
           return
         end
         local data = vim.json.decode(res.body)
-        local text = data.choices and data.choices[1] and data.choices[1].message and data.choices[1].message.content or "Error: Unexpected API response"
+        local text = data.choices and data.choices[1] and data.choices[1].message and data.choices[1].message.content or "ERROR: Unexpected API response"
         vim.schedule(function() callback(text) end)
       end
     })
