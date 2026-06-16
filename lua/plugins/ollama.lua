@@ -1,18 +1,5 @@
+
 return {
-  {
-    "stevearc/conform.nvim",
-    -- event = 'BufWritePre', -- uncomment for format on save
-    opts = require "configs.conform",
-  },
-
-  {
-    "neovim/nvim-lspconfig",
-    config = function()
-      require "configs.lspconfig"
-    end,
-  },
-
-  -- Ollama.nvim
   {
     "nomnivore/ollama.nvim",
     dependencies = { "nvim-lua/plenary.nvim" },
@@ -34,4 +21,6 @@ return {
     },
   },
 }
+
+
 
