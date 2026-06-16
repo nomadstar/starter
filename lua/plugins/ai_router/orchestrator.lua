@@ -106,6 +106,35 @@ local function call_ollama(prompt, callback)
   })
 end
 
+local function start_attention_beeper()
+  local uv = vim.uv or vim.loop
+  local noisy = get_env("AGENT_NOISY_MODE", "false")
+  if noisy ~= "true" then
+    return function() end
+  end
+
+  local sound_path = get_env("AGENT_SOUND_PATH", "/usr/share/sounds/freedesktop/stereo/message.oga")
+  local interval = tonumber(get_env("AGENT_SOUND_INTERVAL", "5")) or 5
+
+  local function play_sound()
+      uv.spawn("paplay", { args = { sound_path }, detached = true }, function() end)
+  end
+
+  play_sound()
+
+  local timer = uv.new_timer()
+  timer:start(interval * 1000, interval * 1000, function()
+      play_sound()
+  end)
+
+  return function()
+    if timer and not timer:is_closing() then
+      timer:stop()
+      timer:close()
+    end
+  end
+end
+
 function M.start_orchestration()
   vim.ui.input({ prompt = "Tarea para Agentes (Ej: Script en python para...): " }, function(user_prompt)
     if not user_prompt or user_prompt == "" then return end
@@ -200,7 +229,9 @@ function M.start_orchestration()
                         
                         vim.schedule(function()
                             vim.cmd("split deploy_ai.sh")
+                            local stop_beep = start_attention_beeper()
                             local choice = vim.fn.confirm("¿Permitir al Arquitecto ejecutar deploy_ai.sh en tu entorno?", "&Sí\n&No", 2)
+                            stop_beep()
                             
                             if choice == 1 then
                                 log("\n> 🚀 **Ejecutando script automáticamente para crear el entorno...**")
@@ -268,7 +299,9 @@ function M.start_orchestration()
       end
       
       vim.schedule(function()
+          local stop_beep = start_attention_beeper()
           vim.ui.input({ prompt = "Feedback al Arquitecto (Vacío para APROBAR): " }, function(feedback)
+              stop_beep()
               if feedback and feedback ~= "" then
                   log("> **[Usuario] Feedback al Arquitecto:** " .. feedback .. "\n")
                   log("> **[Arquitecto Cloud]** Revisando plan...\n")
