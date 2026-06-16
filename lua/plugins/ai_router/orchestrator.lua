@@ -110,8 +110,22 @@ function M.start_orchestration()
   vim.ui.input({ prompt = "Tarea para Agentes (Ej: Script en python para...): " }, function(user_prompt)
     if not user_prompt or user_prompt == "" then return end
 
-    vim.ui.input({ prompt = "Archivo destino (opcional, ej. src/main.rs): " }, function(file_path)
-      vim.cmd("vsplit")
+    local function inject_files(text)
+       return text:gsub("@([%w_./-]+)", function(filepath)
+          local f = io.open(filepath, "r")
+          if f then
+             local content = f:read("*a")
+             f:close()
+             return "\n\n--- INICIO DEL ARCHIVO: " .. filepath .. " ---\n" .. content .. "\n--- FIN DEL ARCHIVO ---\n\n"
+          else
+             return " [Error: no se pudo leer el archivo " .. filepath .. "] "
+          end
+       end)
+    end
+
+    user_prompt = inject_files(user_prompt)
+
+    vim.cmd("vsplit")
     local win = vim.api.nvim_get_current_win()
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_win_set_buf(win, buf)
@@ -163,24 +177,33 @@ function M.start_orchestration()
                   log("\n--- CÓDIGO FINAL ---\n" .. code_response)
                   
                   local raw_code = code_response:match("```[%w]*\n(.-)```") or code_response
+                  vim.fn.setreg("+", raw_code)
+                  log("\n> 📋 **El código ha sido copiado a tu portapapeles (+).**")
+
+                  log("\n> **[Ollama Local (Deployer)]** Generando script de despliegue de archivos...\n")
                   
-                  if file_path and file_path ~= "" then
-                     vim.fn.mkdir(vim.fn.fnamemodify(file_path, ":h"), "p")
-                     local f = io.open(file_path, "w")
-                     if f then
-                        f:write(raw_code)
-                        f:close()
-                        log("\n> 💾 **El código final ha sido guardado en " .. file_path .. ".**")
-                        vim.schedule(function() vim.cmd("edit " .. file_path) end)
-                     else
-                        log("\n> ⚠️ **Error al intentar guardar el archivo en " .. file_path .. ". Guardando en portapapeles.**")
-                        vim.fn.setreg("+", raw_code)
-                        log("\n> 📋 **El código final ha sido copiado a tu portapapeles (+).**")
+                  local deploy_prompt = "You are a Deployment Agent. The following code has been approved:\n\n" .. code_response .. "\n\nWrite a bash script that creates all the necessary directories (using mkdir -p) and saves the code into the correct files (using cat << 'EOF' > filename). Ensure the script is safe and correctly escapes contents. Output ONLY the raw bash script inside a ```bash block. Do not include any other text or explanations."
+                  
+                  call_ollama(deploy_prompt, function(deploy_response)
+                     if deploy_response:match("^ERROR") then
+                        log("\n> ⚠️ **Fallo al generar script de despliegue:** " .. deploy_response)
+                        return
                      end
-                  else
-                     vim.fn.setreg("+", raw_code)
-                     log("\n> 📋 **El código final ha sido copiado a tu portapapeles (+).**")
-                  end
+
+                     local bash_script = deploy_response:match("```bash\n(.-)```") or deploy_response:match("```\n(.-)```") or deploy_response
+                     local f = io.open("deploy_ai.sh", "w")
+                     if f then
+                        f:write(bash_script)
+                        f:close()
+                        vim.fn.system("chmod +x deploy_ai.sh")
+                        log("\n> 💾 **Script guardado como `deploy_ai.sh` en el directorio actual.**")
+                        log("\n> 🚀 **Ejecutando script automáticamente para crear el entorno...**")
+                        local output = vim.fn.system("./deploy_ai.sh")
+                        log("\n> 📋 **Salida del despliegue:**\n" .. (output == "" and "Archivos creados con éxito." or output))
+                     else
+                        log("\n> ⚠️ **Error al guardar deploy_ai.sh**")
+                     end
+                  end)
                else
                   log("### ❌ [Arquitecto] Revisión fallida. Comentarios:\n" .. review_response)
                   current_iter = current_iter + 1
@@ -229,7 +252,6 @@ function M.start_orchestration()
          return
       end
       execute_architecture(arch_response)
-    end)
     end)
   end)
 end
