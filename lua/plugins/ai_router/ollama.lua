@@ -2,7 +2,7 @@ local M = {}
 
 function M.get_models()
   local models = {}
-  if M._cached_models then
+  if M._cached_models and M._cache_time and (os.time() - M._cache_time < 300) then
     return M._cached_models
   end
   
@@ -23,9 +23,9 @@ function M.get_models()
   if #models > 0 then
     M._cached_models = models
   else
-    -- Solo imprimimos advertencia si no hay red tampoco, pero aquí es la capa de ollama.
     M._cached_models = {}
   end
+  M._cache_time = os.time()
   
   return M._cached_models
 end

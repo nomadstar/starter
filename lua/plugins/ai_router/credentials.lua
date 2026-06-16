@@ -6,9 +6,18 @@ local function load_env()
   local f = io.open(env_path, "r")
   if not f then return end
   for line in f:lines() do
-    local key, val = line:match("^%s*([^=]+)%s*=%s*\"?([^\"]+)\"?")
-    if key and val and key ~= "" then
-      vim.fn.setenv(key, val)
+    local eq_idx = line:find("=")
+    if eq_idx then
+      local key = line:sub(1, eq_idx - 1):match("^%s*(.-)%s*$")
+      local val = line:sub(eq_idx + 1):match("^%s*(.-)%s*$")
+      
+      if val and val:sub(1,1) == '"' and val:sub(-1,-1) == '"' then
+         val = val:sub(2, -2)
+      end
+
+      if key and val and key ~= "" then
+        vim.fn.setenv(key, val)
+      end
     end
   end
   f:close()

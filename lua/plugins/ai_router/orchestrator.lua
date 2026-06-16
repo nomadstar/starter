@@ -63,6 +63,13 @@ local function call_cloud(prompt, callback)
           return
         end
         local data = vim.json.decode(res.body)
+        
+        if data.usage and data.usage.total_tokens then
+          pcall(function()
+            require("plugins.ai_router.metrics").add_usage("openrouter", data.usage.total_tokens)
+          end)
+        end
+        
         local text = data.choices and data.choices[1] and data.choices[1].message and data.choices[1].message.content or "ERROR: Unexpected API response"
         vim.schedule(function() callback(text) end)
       end
