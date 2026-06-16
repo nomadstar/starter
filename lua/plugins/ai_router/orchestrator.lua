@@ -348,13 +348,20 @@ function M.start_orchestration()
          local current_file = files[chunk_index]
          log("\n> 📦 **Procesando archivo (" .. chunk_index .. "/" .. #files .. "):** `" .. current_file .. "`")
          
+         local approved_context = ""
+         if chunk_index > 1 then
+             local approved_files = {}
+             for i = 1, chunk_index - 1 do table.insert(approved_files, files[i]) end
+             approved_context = "\n\n[CRITICAL]: The following files have ALREADY been successfully generated and approved: " .. table.concat(approved_files, ", ") .. ". DO NOT request them to be added or fixed. Focus EXCLUSIVELY on: " .. current_file
+         end
+         
          local current_iter = 1
          
          local function do_iteration(comments, previous_code)
             log("> **[Ollama Local (Turboquant)]** Iteración " .. current_iter .. "/" .. max_iter .. ". Escribiendo código...\n")
             local ollama_prompt
             if current_iter == 1 then
-               ollama_prompt = "You are a Developer. Write the full code for this specific file: " .. current_file .. ". Here is the overall plan for context:\n" .. arch_response
+               ollama_prompt = "You are a Developer. Write the full code for this specific file: " .. current_file .. ". Here is the overall plan for context:\n" .. arch_response .. approved_context
             else
                ollama_prompt = "You are a Developer. You are fixing the file: " .. current_file .. ". Here is your previously generated code:\n```\n" .. previous_code .. "\n```\n\nFix the code based EXACTLY on these comments:\n" .. comments
             end
@@ -376,9 +383,9 @@ function M.start_orchestration()
                
                local review_prompt
                if current_iter == 1 then
-                  review_prompt = "You are the Architect. Review this code for the file " .. current_file .. " against your plan:\n\nCODE:\n" .. code_response .. "\n\nPLAN:\n" .. arch_response .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": \"list of fixes if any, or empty\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80."
+                  review_prompt = "You are the Architect. Review this code for the file " .. current_file .. " against your plan:\n\nCODE:\n" .. code_response .. "\n\nPLAN:\n" .. arch_response .. approved_context .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": \"list of fixes if any, or empty\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80."
                else
-                  review_prompt = "You are the Architect. You previously requested these fixes for " .. current_file .. ":\n" .. comments .. "\n\nReview the updated code:\n\nCODE:\n" .. code_response .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": \"list of fixes if any, or empty\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80."
+                  review_prompt = "You are the Architect. You previously requested these fixes for " .. current_file .. ":\n" .. comments .. "\n\nReview the updated code:\n\nCODE:\n" .. code_response .. approved_context .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": \"list of fixes if any, or empty\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80."
                end
                
                if vim.env.CAVEMAN_MODE == "true" then
