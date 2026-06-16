@@ -12,6 +12,28 @@
 
 ---
 
+## 🚀 Installation
+
+This repository acts as a full **NvChad**-based configuration. To install it on your machine, open your terminal and run:
+
+```bash
+# 1. Backup or clean previous Neovim installations
+mv ~/.config/nvim ~/.config/nvim.bak
+rm -rf ~/.local/share/nvim ~/.local/state/nvim
+
+# 2. Clone this repository as your main Neovim configuration
+git clone <YOUR_REPOSITORY_URL> ~/.config/nvim
+
+# 3. Open Neovim. Lazy.nvim will automatically download NvChad and all AI plugins
+nvim
+
+# 4. Generate your AI environment file
+cp ~/.config/nvim/.env.example ~/.config/nvim/.env
+```
+*(Don't forget to edit the `~/.config/nvim/.env` file to add your API Keys or configure your local Ollama path).*
+
+---
+
 # 🤖 AI Ecosystem Manual
 
 This Neovim environment is equipped with a modular, iterative, and entirely provider-agnostic Artificial Intelligence system. Instead of being tied to a single service (like Copilot), this system acts as a **Dynamic Router** that automatically selects the best available AI based on your credits, speed, or your chosen operation mode.
