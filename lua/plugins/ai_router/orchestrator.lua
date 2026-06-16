@@ -200,6 +200,16 @@ function M.start_orchestration()
                         log("\n> 🚀 **Ejecutando script automáticamente para crear el entorno...**")
                         local output = vim.fn.system("./deploy_ai.sh")
                         log("\n> 📋 **Salida del despliegue:**\n" .. (output == "" and "Archivos creados con éxito." or output))
+                        
+                        vim.defer_fn(function()
+                           if vim.api.nvim_win_is_valid(win) then
+                               vim.api.nvim_win_close(win, true)
+                           end
+                           if vim.api.nvim_buf_is_valid(buf) then
+                               vim.api.nvim_buf_delete(buf, { force = true })
+                           end
+                           vim.notify("Orquestador finalizado y buffer cerrado para ahorrar memoria.", vim.log.levels.INFO)
+                        end, 3000)
                      else
                         log("\n> ⚠️ **Error al guardar deploy_ai.sh**")
                      end
