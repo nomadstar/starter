@@ -1,5 +1,7 @@
 **This repo is supposed to be used as config by NvChad users!**
 
+[🇺🇸 View in English](README-en.md)
+
 - The main nvchad repo (NvChad/NvChad) is used as a plugin by this repo.
 - So you just import its modules , like `require "nvchad.options" , require "nvchad.mappings"`
 - So you can delete the .git from this repo ( when you clone it locally ) or fork it :)
@@ -8,40 +10,77 @@
 
 1) Lazyvim starter https://github.com/LazyVim/starter as nvchad's starter was inspired by Lazyvim's . It made a lot of things easier!
 
-# 🤖 Ecosistema de Inteligencia Artificial
+---
 
-Este entorno de Neovim está configurado con un Router de Inteligencia Artificial Dinámico, que permite escribir y refactorizar código en vivo. El sistema utiliza **claves de API estáticas (API Keys)** cargadas de forma efímera en memoria a través de un archivo `.env` que se mantiene ignorado por Git.
+# 🤖 Manual del Ecosistema de Inteligencia Artificial
 
-## 🔐 ¿Cómo obtener las API Keys?
+Este entorno de Neovim está equipado con un sistema de Inteligencia Artificial modular, iterativo y completamente agnóstico al proveedor. En lugar de atarte a un solo servicio (como Copilot), este sistema actúa como un **Enrutador Dinámico** que selecciona automáticamente la mejor IA disponible según tus créditos, velocidad, o el modo de operación que elijas.
 
-### Proveedores Implementados:
-Estas IAs están conectadas al sistema de enrutamiento y fallback. Si una agota sus tokens, el sistema detecta la falla y salta a la siguiente opción disponible automáticamente.
+## 🧠 Arquitectura y Plugins
 
-1. **Anthropic (Claude)**
-   - **Link:** [Console Anthropic](https://console.anthropic.com/settings/keys)
-   - **Instrucciones:** Crea una cuenta, ve al menú de API Keys, presiona "Create Key" y cópiala a tu `.env` como `ANTHROPIC_API_KEY`.
+El ecosistema está construido en base a dos componentes principales:
+1. **[CodeCompanion.nvim]**: El plugin base que nos provee de la interfaz de chat (UI) y adaptadores estándar para hablar con distintos modelos.
+2. **[AI Router (Custom)]**: Nuestra arquitectura privada (ubicada en `lua/plugins/ai_router/`) que actúa como un "Middleware" o intermediario. Analiza las métricas, inyecta las llaves de seguridad de forma efímera, maneja el *fallback* cuando se caen las APIs, e implementa el Orquestador Multi-Agente.
 
-2. **OpenAI (ChatGPT)**
-   - **Link:** [OpenAI API Keys](https://platform.openai.com/api-keys)
-   - **Instrucciones:** Inicia sesión, dirígete al dashboard, genera una "New secret key" y guárdala como `OPENAI_API_KEY`.
+## ⚙️ Configuración y Modos Globales (`.env`)
 
-3. **Google (Gemini Pro)**
-   - **Link:** [Google AI Studio](https://aistudio.google.com/app/apikey)
-   - **Instrucciones:** Entra con tu cuenta de Google, haz clic en "Create API key". Ofrece una de las capas gratuitas más grandes disponibles actualmente. Nómbrala `GEMINI_API_KEY`.
+Toda la seguridad y comportamiento del sistema se controla mediante un único archivo llamado **`.env`** en la raíz de tu carpeta `nvim`. Este archivo **nunca se sube a GitHub** por seguridad (`.gitignore`). Copia la plantilla `.env.example` y renómbrala a `.env` para empezar.
 
-4. **Agregadores Universales (Cientos de modelos en una sola llave)**
-   - Estos servicios te permiten acceder a modelos open-source (Llama, Mistral, DeepSeek) e incluso a modelos cerrados, pagando solo por lo que usas o accediendo a capas gratuitas.
-   - **OpenRouter:** [Consigue tu llave aquí](https://openrouter.ai/keys) y guárdala como `OPENROUTER_API_KEY`.
-   - **Together AI:** [Consigue tu llave aquí](https://api.together.xyz/settings/api-keys) y guárdala como `TOGETHER_API_KEY`. (Juega con ventajas de latencia al hospedar en sus propios clusters LPU/GPU).
+### Variables Principales del `.env`
 
-5. **Ollama (Modelos Locales - Fallback de emergencia)**
-   - **Link:** [Descargar Ollama](https://ollama.com/)
-   - **Instrucciones:** Instala Ollama en tu máquina. Luego corre en tu terminal local un comando como `ollama run llama3`. El router de Neovim usará subprocesos para detectar automáticamente todos los modelos que tengas instalados. ¡No necesita API Key y funciona sin internet!
+- **Credenciales:** `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `TOGETHER_API_KEY`.
+- **Rutas Locales:** `OLLAMA_CMD` (Apunta a tu binario customizado con Turboquant) y `OLLAMA_HOST`.
+
+### Modos de Operación (`AI_ROUTER_MODE`)
+Puedes cambiar el comportamiento global del editor modificando esta variable:
+- `1` **(Full Cloud):** Usa exclusivamente Inteligencias Artificiales de pago en la Nube. Desactiva Ollama.
+- `2` **(Full Local):** Sistema 100% privado y gratuito. Enruta todo tráfico a tu binario local de Ollama.
+- `3` **(Iterative AI):** Activa el **Orquestador Multi-Agente**. (Al usar el atajo de chat, Neovim pondrá a la nube y a Ollama a charlar iterativamente para resolver el problema).
+- `4` **(Fallback Inteligente - Por Defecto):** Evalúa un estimado de tus tokens y lanza peticiones en cascada: `Anthropic -> OpenAI -> Gemini -> OpenRouter -> Together -> Ollama`.
+
+### Modo Cavernícola (`CAVEMAN_MODE="true"`)
+Basado en el principio de *"por qué usar muchas palabras si pocas funcionan"*. Al activarlo, el Router inyecta órdenes profundas que prohíben a la IA usar saludos, explicaciones largas o gramática compleja. Entregará lenguaje telegráfico y código crudo, reduciendo drásticamente tus costos por tokens hasta un 75%.
+
+## ⌨️ Comandos y Atajos (Keymaps)
+
+Una vez configurado tu `.env`, puedes invocar al sistema con los siguientes atajos:
+
+| Atajo | Comando | Descripción |
+|---|---|---|
+| `<leader>ac` | **Chat AI (Routed)** | Abre un panel interactivo con la mejor IA disponible según tu `.env`. (Si `MODE=3`, esto lanza el Orquestador Multi-Agente). |
+| `<leader>ai` | **Inline AI** | Escribe un prompt directamente sobre el código seleccionado para refactorizar en la misma línea. |
+| `<leader>am` | **Multi-Agent (Manual)** | Abre la interfaz de colaboración donde un Arquitecto (Cloud) diseña minimizado y el Desarrollador (Ollama) escribe el código. Se revisan mutuamente (Max 3 veces). |
+| `<leader>af` | **Report Failure** | Si ves que la API actual te da errores 429 (Límite alcanzado), pulsa este atajo para obligar al sistema a "saltar" permanentemente a la siguiente IA de tu lista de Fallback. |
 
 ---
 
-### ⏳ Proveedores Faltantes (Siguientes Pasos):
-Los siguientes motores directos son compatibles, pero la mayoría ya están cubiertos bajo el paraguas de **OpenRouter** y **Together AI**:
+## 🔐 ¿Cómo obtener las API Keys?
 
-- **Mistral API Directa:** Los modelos europeos (Mixtral/Mistral Large) como una alternativa de alto rendimiento directa del proveedor.
-- **Cohere:** Excelentes modelos centrados en enterprise y bases de conocimiento directas.
+Aquí tienes los enlaces directos para conseguir tus credenciales seguras.
+
+1. **Anthropic (Claude)**
+   - **Link:** [Console Anthropic](https://console.anthropic.com/settings/keys)
+   - **Instrucciones:** Crea una cuenta, ve a API Keys, presiona "Create Key" y guárdala como `ANTHROPIC_API_KEY`.
+
+2. **OpenAI (ChatGPT)**
+   - **Link:** [OpenAI API Keys](https://platform.openai.com/api-keys)
+   - **Instrucciones:** Genera una "New secret key" y guárdala como `OPENAI_API_KEY`.
+
+3. **Google (Gemini Pro)**
+   - **Link:** [Google AI Studio](https://aistudio.google.com/app/apikey)
+   - **Instrucciones:** Una de las capas gratuitas más grandes. Nómbrala `GEMINI_API_KEY`.
+
+4. **Agregadores Universales (Cientos de modelos en una sola llave)**
+   - Accede a miles de modelos Open Source y cerrados pagando por uso o gratis.
+   - **OpenRouter:** [Llaves aquí](https://openrouter.ai/keys) (`OPENROUTER_API_KEY`).
+   - **Together AI:** [Llaves aquí](https://api.together.xyz/settings/api-keys) (`TOGETHER_API_KEY`).
+
+5. **Ollama (Modelos Locales - Privado)**
+   - **Instrucciones:** No requiere API Key. El router conectará con tu binario de Ollama (configurado en `OLLAMA_CMD`) localizando todos los modelos de forma asíncrona.
+
+---
+
+### ⏳ Siguientes Pasos y Alternativas:
+La mayoría de los modelos del mundo ya están cubiertos bajo los agregadores **OpenRouter** y **Together AI**. Sin embargo, si deseas añadir conexiones directas de hardware a futuro:
+- **Mistral API Directa**
+- **Cohere API**
