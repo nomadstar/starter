@@ -66,13 +66,16 @@ Based on the principle of *"why waste time say lot word when few word do trick"*
 
 ## 🤖 Multi-Agent Orchestrator (Mode 3 / `<leader>am`)
 
-The Orchestrator is the crown jewel of this environment. It's a fully asynchronous master-slave workflow where you act as the Director:
+The Orchestrator is the crown jewel of this environment. It's a fully asynchronous, highly-advanced master-slave workflow featuring Chunking, JSON Triage, and Web Access:
 
-1. **Context Injection:** When prompted for a task, you can inject entire files by typing `@path/to/file` (e.g., `Refactor @src/main.rs using @MANIFESTO.md`).
-2. **Design Chat:** First, the **Cloud Architect** will generate a plan. The system will pause and ask for your *Feedback*. You can iteratively discuss the plan with the Architect until you are satisfied (leave the text box empty to approve).
-3. **Automatic Iterations:** Once you approve the plan, the **Local Developer** (Ollama) will write the code. The Architect will review it and demand fixes automatically (up to the `AGENT_MAX_ITERATIONS` limit).
-4. **Safe Deployment:** Upon completion, the Architect will generate a Bash script (`deploy_ai.sh`) to physically create all folders and files. It will show you the script in a split screen and ask for confirmation before executing it.
-5. **Noisy Mode:** Since this process is asynchronous, you can enable `AGENT_NOISY_MODE="true"` in your `.env`. Neovim will emit a soft beep every 5 seconds when the process stops and needs your confirmation, so you can safely step away from the computer.
+1. **Context Injection & Autocomplete:** When prompted for a task, you can inject entire files by typing `@path/to/file` (supports `<Tab>` autocomplete!). You can also paste URLs (e.g. `https://docs.rs/serde`), and the system will fetch the docs as clean Markdown using *Jina Reader*.
+2. **Design Chat & Dynamic Chunking:** The **Cloud Architect** evaluates if the task is easy or complex. If complex, it will design a technical plan breaking the work into individual files (Chunks) to prevent memory saturation, asking for your interactive *Feedback*.
+3. **Development & JSON Triage:** The **Local Developer** (Ollama) writes the code file by file. The Architect reviews each one and assigns a strict JSON score (0-100).
+   - **Score >= 90:** Directly approved.
+   - **Score 80-89:** Minor error. The Cloud Architect surgically patches the code on the fly.
+   - **Score < 80:** Major error. Ollama is forced to rewrite it completely with specific fixes.
+4. **Safe Native Deployment:** Upon completing all chunks, the system natively builds a self-deleting Bash script (`deploy_ai.sh`) to physically create all folders and files, asking for your confirmation before execution.
+5. **Memory & Context Isolation:** The Architect has a "short-term memory" that prevents it from hallucinating or forgetting previously approved files, making it rock-solid for large repositories.
 
 ## ⌨️ Commands and Keymaps
 

@@ -66,13 +66,16 @@ Basado en el principio de *"por qué usar muchas palabras si pocas funcionan"*. 
 
 ## 🤖 Orquestador Multi-Agente (Modo 3 / `<leader>am`)
 
-El Orquestador es la joya de la corona de este entorno. Es un flujo de trabajo maestro-esclavo completamente asíncrono donde tú actúas como el Director:
+El Orquestador es la joya de la corona de este entorno. Es un flujo de trabajo maestro-esclavo asíncrono y ultra-avanzado donde tú actúas como el Director. Posee arquitectura de Chunking, Triage por puntuación y acceso web:
 
-1. **Inyección de Contexto:** Cuando te pida la tarea, puedes inyectar archivos enteros escribiendo `@ruta/al/archivo` (ej: `Refactoriza @src/main.rs usando @MANIFESTO.md`).
-2. **Chat de Diseño:** Primero, el **Arquitecto Cloud** generará un plan. El sistema se pausará y te pedirá *Feedback*. Puedes discutir iterativamente el plan con el Arquitecto hasta que estés satisfecho (dejando el cuadro de texto vacío para aprobar).
-3. **Iteraciones Automáticas:** Una vez apruebes el plan, el **Desarrollador Local** (Ollama) escribirá el código. El Arquitecto lo revisará y le exigirá correcciones automáticamente (hasta el límite de `AGENT_MAX_ITERATIONS`).
-4. **Despliegue Seguro:** Al finalizar, el Arquitecto generará un script Bash (`deploy_ai.sh`) para crear todas las carpetas y archivos físicos. Te mostrará el script en pantalla dividida y te pedirá confirmación antes de ejecutarlo.
-5. **Modo Ruidoso (Noisy Mode):** Como este proceso es asíncrono, puedes activar `AGENT_NOISY_MODE="true"` en tu `.env`. Neovim emitirá un suave beep cada 5 segundos cuando el proceso se detenga y necesite tu confirmación, para que puedas alejarte de la computadora tranquilamente.
+1. **Inyección de Contexto y Autocompletado:** Al pedir la tarea, puedes inyectar archivos enteros escribiendo `@ruta/al/archivo` (¡soporta `<Tab>` para autocompletar!). También puedes pegar URLs (ej. `https://docs.rs/serde`) y el sistema descargará la documentación en Markdown limpio usando *Jina Reader*.
+2. **Chat de Diseño y Chunking Dinámico:** El **Arquitecto Cloud** analizará si la tarea es sencilla o compleja. Si es compleja, diseñará un plan técnico dividiendo el trabajo en archivos individuales (Chunks) para no saturar la memoria, y te pedirá *Feedback* interactivo.
+3. **Desarrollo y Triage JSON:** El **Desarrollador Local** (Ollama) escribirá el código de cada archivo uno por uno. El Arquitecto lo revisará y le asignará un puntaje estricto (Score 0-100).
+   - **Score >= 90:** Aprobado directamente.
+   - **Score 80-89:** Error menor. El Arquitecto de la nube lo parchea quirúrgicamente sobre la marcha.
+   - **Score < 80:** Error grave. Se fuerza a Ollama a reescribir con instrucciones específicas.
+4. **Despliegue Nativo Seguro:** Al finalizar todos los chunks, el sistema construirá nativamente un script Bash auto-destruible (`deploy_ai.sh`) para crear todas las carpetas y archivos físicos, pidiéndote confirmación antes de ejecutarlo.
+5. **Memoria y Aislamiento:** El Arquitecto posee una "memoria a corto plazo" que le impide olvidar los archivos que ya fueron aprobados, evitando alucinaciones clásicas de pérdida de contexto en grandes repositorios.
 
 ## ⌨️ Comandos y Atajos (Keymaps)
 
