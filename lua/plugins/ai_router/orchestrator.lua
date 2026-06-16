@@ -359,7 +359,7 @@ function M.start_orchestration()
             end)
          end
          
-         do_iteration()
+         do_iteration(nil, nil)
       end
       
       vim.schedule(function()
