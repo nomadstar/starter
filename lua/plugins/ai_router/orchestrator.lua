@@ -180,11 +180,11 @@ function M.start_orchestration()
                   vim.fn.setreg("+", raw_code)
                   log("\n> 📋 **El código ha sido copiado a tu portapapeles (+).**")
 
-                  log("\n> **[Ollama Local (Deployer)]** Generando script de despliegue de archivos...\n")
+                  log("\n> **[Arquitecto Cloud (Deployer)]** Generando script de despliegue de archivos...\n")
                   
-                  local deploy_prompt = "You are a Deployment Agent. The following code has been approved:\n\n" .. code_response .. "\n\nWrite a bash script that creates all the necessary directories (using mkdir -p) and saves the code into the correct files (using cat << 'EOF' > filename). Ensure the script is safe and correctly escapes contents. Output ONLY the raw bash script inside a ```bash block. Do not include any other text or explanations."
+                  local deploy_prompt = "You are the Architect and Deployment Agent. The following code has been approved:\n\n" .. code_response .. "\n\nWrite a bash script that creates all the necessary directories (using mkdir -p) and saves the code into the correct files (using cat << 'EOF' > filename). Ensure the script is safe and correctly escapes contents. Output ONLY the raw bash script inside a ```bash block. Do not include any other text or explanations."
                   
-                  call_ollama(deploy_prompt, function(deploy_response)
+                  local function execute_deployment(deploy_response)
                      if deploy_response:match("^ERROR") then
                         log("\n> ⚠️ **Fallo al generar script de despliegue:** " .. deploy_response)
                         return
@@ -203,6 +203,18 @@ function M.start_orchestration()
                      else
                         log("\n> ⚠️ **Error al guardar deploy_ai.sh**")
                      end
+                  end
+
+                  call_cloud(deploy_prompt, function(deploy_response)
+                     if deploy_response:match("^ERROR") then
+                        log(deploy_response)
+                        log("\n> ⚠️ **[Sistema]** Falló el Deployer Cloud. Iniciando fallback a Ollama...\n")
+                        call_ollama(deploy_prompt, function(fallback_deploy)
+                           execute_deployment(fallback_deploy)
+                        end)
+                        return
+                     end
+                     execute_deployment(deploy_response)
                   end)
                else
                   log("### ❌ [Arquitecto] Revisión fallida. Comentarios:\n" .. review_response)
