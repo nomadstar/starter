@@ -21,8 +21,11 @@ local function call_cloud(prompt, callback)
   end
 
   local system_prompt = "You are a helpful AI."
+  local anti_lazy = "CRITICAL: You are an autonomous system. Do NOT use placeholders, comments like 'rest of code here', or summaries. You MUST write the ENTIRE implementation for ALL requested files. Skipping code will break the deployment."
+  system_prompt = system_prompt .. "\n" .. anti_lazy
+  
   if vim.env.CAVEMAN_MODE == "true" then
-    system_prompt = "Talk like caveman. Cut filler words. Use minimal grammar. Keep technical accuracy. Shortest possible output."
+    system_prompt = "Talk like caveman. Cut filler words. Use minimal grammar. Keep technical accuracy. Shortest possible output.\n" .. anti_lazy
   end
 
   local function try_model(index)
@@ -36,7 +39,8 @@ local function call_cloud(prompt, callback)
         { role = "system", content = system_prompt },
         { role = "user", content = prompt }
       },
-      temperature = 0.2
+      temperature = 0.2,
+      max_tokens = tonumber(get_env("AGENT_MAX_OUTPUT_TOKENS", "4096"))
     })
 
     curl.post(url, {
@@ -84,8 +88,11 @@ local function call_ollama(prompt, callback)
   local model = get_env("AGENT_LOCAL_MODEL", "llama3")
 
   local system_prompt = "You are a helpful AI."
+  local anti_lazy = "CRITICAL: You are an autonomous system. Do NOT use placeholders, comments like 'rest of code here', or summaries. You MUST write the ENTIRE implementation for ALL requested files. Skipping code will break the deployment."
+  system_prompt = system_prompt .. "\n" .. anti_lazy
+  
   if vim.env.CAVEMAN_MODE == "true" then
-    system_prompt = "Talk like caveman. Cut filler words. Use minimal grammar. Keep technical accuracy. Shortest possible output."
+    system_prompt = "Talk like caveman. Cut filler words. Use minimal grammar. Keep technical accuracy. Shortest possible output.\n" .. anti_lazy
   end
 
   local body = vim.json.encode({
@@ -95,7 +102,10 @@ local function call_ollama(prompt, callback)
       { role = "user", content = prompt }
     },
     stream = false,
-    temperature = 0.1
+    temperature = 0.1,
+    options = {
+      num_predict = tonumber(get_env("AGENT_LOCAL_MAX_PREDICT", "2048"))
+    }
   })
 
   curl.post(url, {
@@ -184,7 +194,7 @@ function M.start_orchestration()
     local cwd = vim.fn.getcwd()
     local tree = vim.fn.system("find . -maxdepth 2 -not -path '*/\\.*' | sort")
     
-    local architecture_prompt = "You are an AI Architect. User wants: " .. user_prompt .. "\n\n[ENVIRONMENT CONTEXT]\nWorking Directory: " .. cwd .. "\nExisting Files:\n" .. tree .. "\nEvaluate the task's complexity. If it is very simple (e.g., small scripts, docs, single configs), write the FULL code yourself and start your response EXACTLY with 'MODE: EASY'. If it is complex (e.g., full apps, heavy logic, multiple files), do not write code, start your response EXACTLY with 'MODE: COMPLEX' and provide ONLY a concise technical plan and pseudocode to solve this. Minimize your response to save tokens."
+    local architecture_prompt = "You are an AI Architect. User wants: " .. user_prompt .. "\n\n[ENVIRONMENT CONTEXT]\nWorking Directory: " .. cwd .. "\nExisting Files:\n" .. tree .. "\nEvaluate the task's complexity. If it is very simple (e.g., small scripts, docs, single configs), write the FULL code yourself and start your response EXACTLY with 'MODE: EASY'. If it is complex (e.g., full apps, heavy logic, multiple files), do not write code, start your response EXACTLY with 'MODE: COMPLEX' and provide a concise technical plan. At the VERY END of your plan, list ALL the files that need to be created or modified, each on a new line starting EXACTLY with '[FILE] path/to/file'."
     
     log("> **[Arquitecto Cloud]** Analizando petición para minimizar tokens...\n")
     
@@ -255,74 +265,101 @@ function M.start_orchestration()
          end)
       end
       
-      local function do_iteration(comments, previous_code)
-         log("> **[Ollama Local (Turboquant)]** Iteración " .. current_iter .. "/" .. max_iter .. ". Escribiendo código...\n")
-         local ollama_prompt
-         if current_iter == 1 then
-            ollama_prompt = "You are a Developer. Write the full code for this plan:\n" .. arch_response
-         else
-            ollama_prompt = "You are a Developer. Here is your previously generated code:\n```\n" .. previous_code .. "\n```\n\nFix the code based EXACTLY on these comments:\n" .. comments
+      local files = {}
+      for file in arch_response:gmatch("%[FILE%]%s*([^\n\r]+)") do
+         table.insert(files, vim.trim(file))
+      end
+      if #files == 0 then
+         table.insert(files, "main_project")
+      end
+      
+      local all_generated_code = ""
+      
+      local function process_chunk(chunk_index)
+         if chunk_index > #files then
+            log("\n> 🎯 **Todos los archivos han sido generados.** Iniciando despliegue...")
+            start_deployment(all_generated_code)
+            return
          end
          
-         if vim.env.CAVEMAN_MODE == "true" then
-            ollama_prompt = ollama_prompt .. "\n\nCAVEMAN MODE: Output ONLY code. No chatter. Shortest possible fixes."
-         end
-         ollama_prompt = ollama_prompt .. "\nOutput ONLY the raw code inside standard markdown blocks (```). Do not include any other text."
-
-         call_ollama(ollama_prompt, function(code_response)
-            if code_response:match("^ERROR") then
-               log(code_response)
-               return
-            end
-            
-            log("> **[Ollama Local]** Código completado. Solicitando revisión iterativa...\n")
-            
-            local review_prompt
+         local current_file = files[chunk_index]
+         log("\n> 📦 **Procesando archivo (" .. chunk_index .. "/" .. #files .. "):** `" .. current_file .. "`")
+         
+         local current_iter = 1
+         
+         local function do_iteration(comments, previous_code)
+            log("> **[Ollama Local (Turboquant)]** Iteración " .. current_iter .. "/" .. max_iter .. ". Escribiendo código...\n")
+            local ollama_prompt
             if current_iter == 1 then
-               review_prompt = "You are the Architect. Review this code against your plan:\n\nCODE:\n" .. code_response .. "\n\nPLAN:\n" .. arch_response .. "\n\nIf the code works perfectly and implements the plan, reply EXACTLY with the word 'APPROVED' (nothing else). If it has bugs or issues, reply with a very concise list of fixes."
+               ollama_prompt = "You are a Developer. Write the full code for this specific file: " .. current_file .. ". Here is the overall plan for context:\n" .. arch_response
             else
-               review_prompt = "You are the Architect. You previously requested these fixes:\n" .. comments .. "\n\nReview the updated code to see if the fixes were applied:\n\nCODE:\n" .. code_response .. "\n\nIf the code works perfectly, reply EXACTLY with the word 'APPROVED' (nothing else). If it has remaining bugs, reply with a very concise list of fixes."
+               ollama_prompt = "You are a Developer. You are fixing the file: " .. current_file .. ". Here is your previously generated code:\n```\n" .. previous_code .. "\n```\n\nFix the code based EXACTLY on these comments:\n" .. comments
             end
             
             if vim.env.CAVEMAN_MODE == "true" then
-               review_prompt = review_prompt .. "\n\nCAVEMAN MODE: Output 'APPROVED' or bare-bones bullet points of fixes. No explanations."
+               ollama_prompt = ollama_prompt .. "\n\nCAVEMAN MODE: Output ONLY code. No chatter. Shortest possible fixes."
             end
-            
-            local function handle_review(review_response)
-               if review_response:match("APPROVED") then
-                  log("### ✅ [Arquitecto] Código APROBADO en la iteración " .. current_iter .. "!")
-                  log("\n--- CÓDIGO FINAL ---\n" .. code_response)
-                  
-                  start_deployment(code_response)
-               else
-                  log("### ❌ [Arquitecto] Revisión fallida. Comentarios:\n" .. review_response)
-                  current_iter = current_iter + 1
-                  if current_iter > max_iter then
-                     log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado. Abortando.")
-                     log("\n--- ÚLTIMO CÓDIGO ---\n" .. code_response)
-                  else
-                     log("\n---\n")
-                     do_iteration(review_response, code_response)
-                  end
-               end
-            end
-
-            call_cloud(review_prompt, function(review_response)
-               if review_response:match("^ERROR") then
-                  log(review_response)
-                  log("\n> ⚠️ **[Sistema]** Falló el Revisor Cloud. Iniciando fallback a Ollama...\n")
-                  call_ollama(review_prompt, function(fallback_review)
-                     if fallback_review:match("^ERROR") then
-                        log(fallback_review)
-                        return
-                     end
-                     handle_review(fallback_review)
-                  end)
+            local anti_lazy = "CRITICAL: You are an autonomous system. Do NOT use placeholders, comments like 'rest of code here', or summaries. You MUST write the ENTIRE implementation for ALL requested files. Skipping code will break the deployment."
+            ollama_prompt = ollama_prompt .. "\n" .. anti_lazy
+            ollama_prompt = ollama_prompt .. "\nOutput ONLY the raw code inside standard markdown blocks (```). Do not include any other text."
+   
+            call_ollama(ollama_prompt, function(code_response)
+               if code_response:match("^ERROR") then
+                  log(code_response)
                   return
                end
-               handle_review(review_response)
+               
+               log("> **[Ollama Local]** Código completado (" .. current_file .. "). Solicitando revisión iterativa...\n")
+               
+               local review_prompt
+               if current_iter == 1 then
+                  review_prompt = "You are the Architect. Review this code for the file " .. current_file .. " against your plan:\n\nCODE:\n" .. code_response .. "\n\nPLAN:\n" .. arch_response .. "\n\nIf the code works perfectly, reply EXACTLY with the word 'APPROVED' (nothing else). If it has bugs or issues, reply with a very concise list of fixes."
+               else
+                  review_prompt = "You are the Architect. You previously requested these fixes for " .. current_file .. ":\n" .. comments .. "\n\nReview the updated code:\n\nCODE:\n" .. code_response .. "\n\nIf the code works perfectly, reply EXACTLY with the word 'APPROVED' (nothing else). If it has remaining bugs, reply with a very concise list of fixes."
+               end
+               
+               if vim.env.CAVEMAN_MODE == "true" then
+                  review_prompt = review_prompt .. "\n\nCAVEMAN MODE: Output 'APPROVED' or bare-bones bullet points of fixes. No explanations."
+               end
+               
+               local function handle_review(review_response)
+                  if review_response:match("APPROVED") then
+                     log("### ✅ [Arquitecto] Archivo `" .. current_file .. "` APROBADO en la iteración " .. current_iter .. "!")
+                     all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. code_response
+                     process_chunk(chunk_index + 1)
+                  else
+                     log("### ❌ [Arquitecto] Revisión fallida para " .. current_file .. ". Comentarios:\n" .. review_response)
+                     current_iter = current_iter + 1
+                     if current_iter > max_iter then
+                        log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado para " .. current_file .. ". Aceptando tal como está.")
+                        all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. code_response
+                        process_chunk(chunk_index + 1)
+                     else
+                        log("\n---\n")
+                        do_iteration(review_response, code_response)
+                     end
+                  end
+               end
+   
+               call_cloud(review_prompt, function(review_response)
+                  if review_response:match("^ERROR") then
+                     log(review_response)
+                     log("\n> ⚠️ **[Sistema]** Falló el Revisor Cloud. Iniciando fallback a Ollama...\n")
+                     call_ollama(review_prompt, function(fallback_review)
+                        if fallback_review:match("^ERROR") then
+                           log(fallback_review)
+                           return
+                        end
+                        handle_review(fallback_review)
+                     end)
+                     return
+                  end
+                  handle_review(review_response)
+               end)
             end)
-         end)
+         end
+         
+         do_iteration()
       end
       
       vim.schedule(function()
@@ -357,7 +394,7 @@ function M.start_orchestration()
                       start_deployment(arch_response)
                   else
                       log("> ✅ **Plan Aprobado por el Usuario. Iniciando desarrollo...**\n")
-                      do_iteration(nil, nil)
+                      process_chunk(1)
                   end
               end
           end)
