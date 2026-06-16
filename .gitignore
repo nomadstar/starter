@@ -1,0 +1,8 @@
+# Variables de entorno locales
+.env
+
+# Archivos compilados y datos
+*.swp
+*.swo
+.DS_Store
+lazy-lock.json
