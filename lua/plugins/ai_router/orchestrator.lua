@@ -189,7 +189,7 @@ function M.start_orchestration()
 
          log("\n> **[Arquitecto Cloud (Deployer)]** Generando script de despliegue de archivos...\n")
          
-         local deploy_prompt = "You are the Architect and Deployment Agent. The following code has been approved:\n\n" .. code_response .. "\n\nWrite a bash script that creates all the necessary directories (using mkdir -p) and saves the code into the correct files (using cat << 'EOF' > filename). Ensure the script is safe and correctly escapes contents. Output ONLY the raw bash script inside a ```bash block. Do not include any other text or explanations."
+         local deploy_prompt = "You are the Deployment Agent. The following code has been approved:\n\n" .. code_response .. "\n\nWrite a bash script that:\n1. Creates all necessary directories (using mkdir -p).\n2. Saves the code into the correct files (using cat << 'EOF' > filename).\n3. EXECUTES the necessary commands to compile and run the project (e.g., `cargo run`, `python3 file.py`, `node app.js`, etc.).\n\nEnsure the script is safe and correctly escapes contents. Output ONLY the raw bash script inside a ```bash block. Do not include any other text."
          
          local function execute_deployment(deploy_response)
             if deploy_response:match("^ERROR") then
