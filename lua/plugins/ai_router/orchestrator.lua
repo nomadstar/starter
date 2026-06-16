@@ -207,23 +207,13 @@ function M.start_orchestration()
          vim.fn.setreg("+", raw_code)
          log("\n> 📋 **El código ha sido copiado a tu portapapeles temporalmente.**")
 
-         log("\n> ⏳ **[Arquitecto Cloud (Deployer)]** Construyendo el ejecutable de despliegue `deploy_ai.sh`... (Por favor espera unos segundos)\n")
-         
-         local deploy_prompt = "You are the Deployment Agent. The following code has been approved:\n\n" .. code_response .. "\n\nWrite a bash script that:\n1. Creates all necessary directories (using mkdir -p).\n2. Saves the code into the correct files (using cat << 'EOF' > filename).\n3. EXECUTES the necessary commands to compile and run the project (e.g., `cargo run`, `python3 file.py`, `node app.js`, etc.).\n\nEnsure the script is safe and correctly escapes contents. Output ONLY the raw bash script inside a ```bash block. Do not include any other text."
-         
-         local function execute_deployment(deploy_response)
-            if deploy_response:match("^ERROR") then
-               log("\n> ⚠️ **Fallo al generar script de despliegue:** " .. deploy_response)
-               return
-            end
-
-            local bash_script = deploy_response:match("```bash\n(.-)```") or deploy_response:match("```\n(.-)```") or deploy_response
+         local function execute_deployment(bash_script)
             local f = io.open("deploy_ai.sh", "w")
             if f then
                f:write(bash_script)
                f:close()
                vim.fn.system("chmod +x deploy_ai.sh")
-               log("\n> 💾 **Script guardado como `deploy_ai.sh` en el directorio actual.**")
+               log("\n> 💾 **Script generado como `deploy_ai.sh`.**")
                
                vim.schedule(function()
                    vim.cmd("split deploy_ai.sh")
@@ -252,17 +242,52 @@ function M.start_orchestration()
             end
          end
 
-         call_cloud(deploy_prompt, function(deploy_response)
-            if deploy_response:match("^ERROR") then
-               log(deploy_response)
-               log("\n> ⚠️ **[Sistema]** Falló el Deployer Cloud. Iniciando fallback a Ollama...\n")
-               call_ollama(deploy_prompt, function(fallback_deploy)
-                  execute_deployment(fallback_deploy)
-               end)
-               return
+         local function build_deploy_script_native(generated_code)
+            local script = "#!/bin/bash\nset -e\ntrap 'rm -f deploy_ai.sh' EXIT\n\n"
+            local count = 0
+            local parts = vim.split(generated_code, "### FILE: ", { plain = true })
+            for _, part in ipairs(parts) do
+               part = vim.trim(part)
+               if part ~= "" then
+                  local newline_idx = part:find("\n")
+                  if newline_idx then
+                     local filepath = vim.trim(part:sub(1, newline_idx - 1))
+                     local code = part:sub(newline_idx + 1)
+                     local clean_code = code:match("```[%w]*\n(.-)```") or code
+                     local dir = filepath:match("(.+)/[^/]+$")
+                     if dir then script = script .. "mkdir -p " .. dir .. "\n" end
+                     script = script .. "cat > " .. filepath .. " << 'ENDOFFILE'\n" .. clean_code .. "\nENDOFFILE\n\n"
+                     count = count + 1
+                  end
+               end
             end
-            execute_deployment(deploy_response)
-         end)
+            if count == 0 then return nil end
+            return script
+         end
+
+         local native_script = build_deploy_script_native(code_response)
+         if native_script then
+             log("\n> ⚡ **[Sistema]** Construyendo script de despliegue nativamente (Evitando límites de tokens)...")
+             execute_deployment(native_script)
+         else
+             log("\n> ⏳ **[Arquitecto Cloud (Deployer)]** Construyendo el ejecutable de despliegue `deploy_ai.sh`... (Por favor espera unos segundos)\n")
+             
+             local deploy_prompt = "You are the Deployment Agent. The following code has been approved:\n\n" .. code_response .. "\n\nWrite a bash script that:\n1. Includes `trap 'rm -f deploy_ai.sh' EXIT` at the top to self-delete.\n2. Creates all necessary directories (using mkdir -p).\n3. Saves the code into the correct files (using cat << 'EOF' > filename).\n4. EXECUTES the necessary commands to compile and run the project.\n\nEnsure the script is safe and correctly escapes contents. Output ONLY the raw bash script inside a ```bash block. Do not include any other text."
+             
+             call_cloud(deploy_prompt, function(deploy_response)
+                if deploy_response:match("^ERROR") then
+                   log(deploy_response)
+                   log("\n> ⚠️ **[Sistema]** Falló el Deployer Cloud. Iniciando fallback a Ollama...\n")
+                   call_ollama(deploy_prompt, function(fallback_deploy)
+                      local bash_script = fallback_deploy:match("```bash\n(.-)```") or fallback_deploy:match("```\n(.-)```") or fallback_deploy
+                      execute_deployment(bash_script)
+                   end)
+                   return
+                end
+                local bash_script = deploy_response:match("```bash\n(.-)```") or deploy_response:match("```\n(.-)```") or deploy_response
+                execute_deployment(bash_script)
+             end)
+         end
       end
       
       local files = {}
