@@ -110,7 +110,8 @@ function M.start_orchestration()
   vim.ui.input({ prompt = "Tarea para Agentes (Ej: Script en python para...): " }, function(user_prompt)
     if not user_prompt or user_prompt == "" then return end
 
-    vim.cmd("vsplit")
+    vim.ui.input({ prompt = "Archivo destino (opcional, ej. src/main.rs): " }, function(file_path)
+      vim.cmd("vsplit")
     local win = vim.api.nvim_get_current_win()
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_win_set_buf(win, buf)
@@ -162,8 +163,23 @@ function M.start_orchestration()
                   log("\n--- CÓDIGO FINAL ---\n" .. code_response)
                   
                   local raw_code = code_response:match("```[%w]*\n(.-)```") or code_response
-                  vim.fn.setreg("+", raw_code)
-                  log("\n> 📋 **El código final ha sido copiado a tu portapapeles (+).**")
+                  
+                  if file_path and file_path ~= "" then
+                     local f = io.open(file_path, "w")
+                     if f then
+                        f:write(raw_code)
+                        f:close()
+                        log("\n> 💾 **El código final ha sido guardado en " .. file_path .. ".**")
+                        vim.schedule(function() vim.cmd("edit " .. file_path) end)
+                     else
+                        log("\n> ⚠️ **Error al intentar guardar el archivo en " .. file_path .. ". Guardando en portapapeles.**")
+                        vim.fn.setreg("+", raw_code)
+                        log("\n> 📋 **El código final ha sido copiado a tu portapapeles (+).**")
+                     end
+                  else
+                     vim.fn.setreg("+", raw_code)
+                     log("\n> 📋 **El código final ha sido copiado a tu portapapeles (+).**")
+                  end
                else
                   log("### ❌ [Arquitecto] Revisión fallida. Comentarios:\n" .. review_response)
                   current_iter = current_iter + 1
@@ -212,6 +228,7 @@ function M.start_orchestration()
          return
       end
       execute_architecture(arch_response)
+    end)
     end)
   end)
 end
