@@ -185,9 +185,9 @@ function M.start_orchestration()
       local function start_deployment(code_response)
          local raw_code = code_response:match("```[%w]*\n(.-)```") or code_response
          vim.fn.setreg("+", raw_code)
-         log("\n> 📋 **El código ha sido copiado a tu portapapeles (+).**")
+         log("\n> 📋 **El código ha sido copiado a tu portapapeles temporalmente.**")
 
-         log("\n> **[Arquitecto Cloud (Deployer)]** Generando script de despliegue de archivos...\n")
+         log("\n> ⏳ **[Arquitecto Cloud (Deployer)]** Construyendo el ejecutable de despliegue `deploy_ai.sh`... (Por favor espera unos segundos)\n")
          
          local deploy_prompt = "You are the Deployment Agent. The following code has been approved:\n\n" .. code_response .. "\n\nWrite a bash script that:\n1. Creates all necessary directories (using mkdir -p).\n2. Saves the code into the correct files (using cat << 'EOF' > filename).\n3. EXECUTES the necessary commands to compile and run the project (e.g., `cargo run`, `python3 file.py`, `node app.js`, etc.).\n\nEnsure the script is safe and correctly escapes contents. Output ONLY the raw bash script inside a ```bash block. Do not include any other text."
          
@@ -212,19 +212,17 @@ function M.start_orchestration()
                    stop_beep()
                    
                    if choice == 1 then
-                       log("\n> 🚀 **Ejecutando script automáticamente para crear el entorno...**")
-                       local output = vim.fn.system("./deploy_ai.sh")
-                       log("\n> 📋 **Salida del despliegue:**\n" .. (output == "" and "Archivos creados con éxito." or output))
+                       log("\n> 🚀 **Ejecutando script en nueva terminal interactiva...**")
+                       
+                       -- Run in terminal so user can see output and interact
+                       vim.cmd("split | terminal ./deploy_ai.sh")
                        
                        vim.defer_fn(function()
-                          if vim.api.nvim_win_is_valid(win) then
-                              vim.api.nvim_win_close(win, true)
-                          end
                           if vim.api.nvim_buf_is_valid(buf) then
                               vim.api.nvim_buf_delete(buf, { force = true })
                           end
-                          vim.notify("Orquestador finalizado y buffer cerrado para ahorrar memoria.", vim.log.levels.INFO)
-                       end, 3000)
+                          vim.notify("Orquestador finalizado. Puedes ver la ejecución en la terminal.", vim.log.levels.INFO)
+                       end, 1500)
                    else
                        log("\n> 🛑 **Despliegue cancelado. Puedes revisar y ejecutar `deploy_ai.sh` manualmente.**")
                    end
@@ -328,7 +326,7 @@ function M.start_orchestration()
                      execute_architecture(revised_response)
                   end)
               else
-                  if arch_response:match("MODE:%s*EASY") then
+                  if arch_response:match("[Mm][Oo][Dd][Ee]:%s*[Ee][Aa][Ss][Yy]") then
                       log("> ✅ **Código Aprobado por el Usuario (Delegación Inteligente).**\n")
                       start_deployment(arch_response)
                   else
