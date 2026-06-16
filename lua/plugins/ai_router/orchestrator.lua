@@ -338,22 +338,52 @@ function M.start_orchestration()
                
                local review_prompt
                if current_iter == 1 then
-                  review_prompt = "You are the Architect. Review this code for the file " .. current_file .. " against your plan:\n\nCODE:\n" .. code_response .. "\n\nPLAN:\n" .. arch_response .. "\n\nIf the code works perfectly, reply EXACTLY with the word 'APPROVED' (nothing else). If it has bugs or issues, reply with a very concise list of fixes."
+                  review_prompt = "You are the Architect. Review this code for the file " .. current_file .. " against your plan:\n\nCODE:\n" .. code_response .. "\n\nPLAN:\n" .. arch_response .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": \"list of fixes if any, or empty\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80."
                else
-                  review_prompt = "You are the Architect. You previously requested these fixes for " .. current_file .. ":\n" .. comments .. "\n\nReview the updated code:\n\nCODE:\n" .. code_response .. "\n\nIf the code works perfectly, reply EXACTLY with the word 'APPROVED' (nothing else). If it has remaining bugs, reply with a very concise list of fixes."
+                  review_prompt = "You are the Architect. You previously requested these fixes for " .. current_file .. ":\n" .. comments .. "\n\nReview the updated code:\n\nCODE:\n" .. code_response .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": \"list of fixes if any, or empty\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80."
                end
                
                if vim.env.CAVEMAN_MODE == "true" then
-                  review_prompt = review_prompt .. "\n\nCAVEMAN MODE: Output 'APPROVED' or bare-bones bullet points of fixes. No explanations."
+                  review_prompt = review_prompt .. "\n\nCAVEMAN MODE: Output ONLY the raw JSON object. No markdown formatting, no explanations."
                end
                
                local function handle_review(review_response)
-                  if review_response:match("APPROVED") then
-                     log("### ✅ [Arquitecto] Archivo `" .. current_file .. "` APROBADO en la iteración " .. current_iter .. "!")
+                  local json_str = review_response:match("{.*}") or review_response
+                  local ok, data = pcall(vim.json.decode, json_str)
+                  
+                  local score = 0
+                  local fixes = review_response
+                  if ok and type(data) == "table" then
+                      score = tonumber(data.score) or 0
+                      fixes = data.fixes or "Unknown error"
+                  else
+                      log("\n> ⚠️ **[Sistema]** Falló el parseo JSON del Revisor. Asumiendo score 0.")
+                  end
+                  
+                  if score >= 90 then
+                     log("### ✅ [Arquitecto] Archivo `" .. current_file .. "` APROBADO (Score: " .. score .. ") en iteración " .. current_iter .. "!")
                      all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. code_response
                      process_chunk(chunk_index + 1)
+                  elseif score >= 80 and score < 90 then
+                     log("### 🩹 [Arquitecto] Errores menores en " .. current_file .. " (Score: " .. score .. "). Delegando parche a Cloud Developer...")
+                     local patch_prompt = "You are a Developer. The code below has these minor issues:\n" .. fixes .. "\n\nCODE:\n" .. code_response .. "\n\nFix the code. Return the fixed code inside a markdown block. BEFORE the code block, briefly list the exact changes you made (verbose log)."
+                     
+                     call_cloud(patch_prompt, function(patch_response)
+                        if patch_response:match("^ERROR") then
+                           log("\n> ⚠️ **[Sistema]** Falló el parche en la nube. Forzando iteración local...")
+                           do_iteration(fixes, code_response)
+                           return
+                        end
+                        
+                        log("\n> ☁️ **[Cloud Developer]** Cambios aplicados en `" .. current_file .. "`:\n" .. patch_response)
+                        local patched_code = patch_response:match("```[%w]*\n(.-)```") or patch_response
+                        
+                        log("\n### ✅ [Sistema] Archivo `" .. current_file .. "` APROBADO vía parche Cloud!")
+                        all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. patched_code
+                        process_chunk(chunk_index + 1)
+                     end)
                   else
-                     log("### ❌ [Arquitecto] Revisión fallida para " .. current_file .. ". Comentarios:\n" .. review_response)
+                     log("### ❌ [Arquitecto] Revisión fallida para " .. current_file .. " (Score: " .. score .. "). Comentarios:\n" .. fixes)
                      current_iter = current_iter + 1
                      if current_iter > max_iter then
                         log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado para " .. current_file .. ". Aceptando tal como está.")
@@ -361,7 +391,7 @@ function M.start_orchestration()
                         process_chunk(chunk_index + 1)
                      else
                         log("\n---\n")
-                        do_iteration(review_response, code_response)
+                        do_iteration(fixes, code_response)
                      end
                   end
                end
