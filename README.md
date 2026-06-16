@@ -30,6 +30,7 @@ Toda la seguridad y comportamiento del sistema se controla mediante un único ar
 
 - **Credenciales:** `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, `TOGETHER_API_KEY`.
 - **Rutas Locales:** `OLLAMA_CMD` (Apunta a tu binario customizado con Turboquant) y `OLLAMA_HOST`.
+- **Orquestador:** `AGENT_MAX_ITERATIONS` (Intentos de corrección), `AGENT_NOISY_MODE` (Beep de atención), `AGENT_CLOUD_MODEL`, `AGENT_LOCAL_MODEL`.
 
 ### Modos de Operación (`AI_ROUTER_MODE`)
 Puedes cambiar el comportamiento global del editor modificando esta variable:
@@ -40,6 +41,16 @@ Puedes cambiar el comportamiento global del editor modificando esta variable:
 
 ### Modo Cavernícola (`CAVEMAN_MODE="true"`)
 Basado en el principio de *"por qué usar muchas palabras si pocas funcionan"*. Al activarlo, el Router inyecta órdenes profundas que prohíben a la IA usar saludos, explicaciones largas o gramática compleja. Entregará lenguaje telegráfico y código crudo, reduciendo drásticamente tus costos por tokens hasta un 75%.
+
+## 🤖 Orquestador Multi-Agente (Modo 3 / `<leader>am`)
+
+El Orquestador es la joya de la corona de este entorno. Es un flujo de trabajo maestro-esclavo completamente asíncrono donde tú actúas como el Director:
+
+1. **Inyección de Contexto:** Cuando te pida la tarea, puedes inyectar archivos enteros escribiendo `@ruta/al/archivo` (ej: `Refactoriza @src/main.rs usando @MANIFESTO.md`).
+2. **Chat de Diseño:** Primero, el **Arquitecto Cloud** generará un plan. El sistema se pausará y te pedirá *Feedback*. Puedes discutir iterativamente el plan con el Arquitecto hasta que estés satisfecho (dejando el cuadro de texto vacío para aprobar).
+3. **Iteraciones Automáticas:** Una vez apruebes el plan, el **Desarrollador Local** (Ollama) escribirá el código. El Arquitecto lo revisará y le exigirá correcciones automáticamente (hasta el límite de `AGENT_MAX_ITERATIONS`).
+4. **Despliegue Seguro:** Al finalizar, el Arquitecto generará un script Bash (`deploy_ai.sh`) para crear todas las carpetas y archivos físicos. Te mostrará el script en pantalla dividida y te pedirá confirmación antes de ejecutarlo.
+5. **Modo Ruidoso (Noisy Mode):** Como este proceso es asíncrono, puedes activar `AGENT_NOISY_MODE="true"` en tu `.env`. Neovim emitirá un suave beep cada 5 segundos cuando el proceso se detenga y necesite tu confirmación, para que puedas alejarte de la computadora tranquilamente.
 
 ## ⌨️ Comandos y Atajos (Keymaps)
 
