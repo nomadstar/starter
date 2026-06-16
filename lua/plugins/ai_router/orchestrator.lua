@@ -174,13 +174,78 @@ function M.start_orchestration()
     local max_iter = tonumber(get_env("AGENT_MAX_ITERATIONS", "3"))
     local current_iter = 1
     
-    local architecture_prompt = "You are an AI Architect. User wants: " .. user_prompt .. "\nProvide ONLY a concise technical plan and pseudocode to solve this. Do not write full code. Minimize your response to save tokens."
+    local architecture_prompt = "You are an AI Architect. User wants: " .. user_prompt .. "\nEvaluate the task's complexity. If it is very simple (e.g., small scripts, docs, single configs), write the FULL code yourself and start your response EXACTLY with 'MODE: EASY'. If it is complex (e.g., full apps, heavy logic, multiple files), do not write code, start your response EXACTLY with 'MODE: COMPLEX' and provide ONLY a concise technical plan and pseudocode to solve this. Minimize your response to save tokens."
     
     log("> **[Arquitecto Cloud]** Analizando petición para minimizar tokens...\n")
     
     local function execute_architecture(arch_response)
       log("> **[Arquitecto] Plan generado:**\n" .. arch_response)
       log("\n---\n")
+
+      local function start_deployment(code_response)
+         local raw_code = code_response:match("```[%w]*\n(.-)```") or code_response
+         vim.fn.setreg("+", raw_code)
+         log("\n> 📋 **El código ha sido copiado a tu portapapeles (+).**")
+
+         log("\n> **[Arquitecto Cloud (Deployer)]** Generando script de despliegue de archivos...\n")
+         
+         local deploy_prompt = "You are the Architect and Deployment Agent. The following code has been approved:\n\n" .. code_response .. "\n\nWrite a bash script that creates all the necessary directories (using mkdir -p) and saves the code into the correct files (using cat << 'EOF' > filename). Ensure the script is safe and correctly escapes contents. Output ONLY the raw bash script inside a ```bash block. Do not include any other text or explanations."
+         
+         local function execute_deployment(deploy_response)
+            if deploy_response:match("^ERROR") then
+               log("\n> ⚠️ **Fallo al generar script de despliegue:** " .. deploy_response)
+               return
+            end
+
+            local bash_script = deploy_response:match("```bash\n(.-)```") or deploy_response:match("```\n(.-)```") or deploy_response
+            local f = io.open("deploy_ai.sh", "w")
+            if f then
+               f:write(bash_script)
+               f:close()
+               vim.fn.system("chmod +x deploy_ai.sh")
+               log("\n> 💾 **Script guardado como `deploy_ai.sh` en el directorio actual.**")
+               
+               vim.schedule(function()
+                   vim.cmd("split deploy_ai.sh")
+                   local stop_beep = start_attention_beeper()
+                   local choice = vim.fn.confirm("¿Permitir al Arquitecto ejecutar deploy_ai.sh en tu entorno?", "&Sí\n&No", 2)
+                   stop_beep()
+                   
+                   if choice == 1 then
+                       log("\n> 🚀 **Ejecutando script automáticamente para crear el entorno...**")
+                       local output = vim.fn.system("./deploy_ai.sh")
+                       log("\n> 📋 **Salida del despliegue:**\n" .. (output == "" and "Archivos creados con éxito." or output))
+                       
+                       vim.defer_fn(function()
+                          if vim.api.nvim_win_is_valid(win) then
+                              vim.api.nvim_win_close(win, true)
+                          end
+                          if vim.api.nvim_buf_is_valid(buf) then
+                              vim.api.nvim_buf_delete(buf, { force = true })
+                          end
+                          vim.notify("Orquestador finalizado y buffer cerrado para ahorrar memoria.", vim.log.levels.INFO)
+                       end, 3000)
+                   else
+                       log("\n> 🛑 **Despliegue cancelado. Puedes revisar y ejecutar `deploy_ai.sh` manualmente.**")
+                   end
+               end)
+            else
+               log("\n> ⚠️ **Error al guardar deploy_ai.sh**")
+            end
+         end
+
+         call_cloud(deploy_prompt, function(deploy_response)
+            if deploy_response:match("^ERROR") then
+               log(deploy_response)
+               log("\n> ⚠️ **[Sistema]** Falló el Deployer Cloud. Iniciando fallback a Ollama...\n")
+               call_ollama(deploy_prompt, function(fallback_deploy)
+                  execute_deployment(fallback_deploy)
+               end)
+               return
+            end
+            execute_deployment(deploy_response)
+         end)
+      end
       
       local function do_iteration(comments, previous_code)
          log("> **[Ollama Local (Turboquant)]** Iteración " .. current_iter .. "/" .. max_iter .. ". Escribiendo código...\n")
@@ -208,68 +273,7 @@ function M.start_orchestration()
                   log("### ✅ [Arquitecto] Código APROBADO en la iteración " .. current_iter .. "!")
                   log("\n--- CÓDIGO FINAL ---\n" .. code_response)
                   
-                  local raw_code = code_response:match("```[%w]*\n(.-)```") or code_response
-                  vim.fn.setreg("+", raw_code)
-                  log("\n> 📋 **El código ha sido copiado a tu portapapeles (+).**")
-
-                  log("\n> **[Arquitecto Cloud (Deployer)]** Generando script de despliegue de archivos...\n")
-                  
-                  local deploy_prompt = "You are the Architect and Deployment Agent. The following code has been approved:\n\n" .. code_response .. "\n\nWrite a bash script that creates all the necessary directories (using mkdir -p) and saves the code into the correct files (using cat << 'EOF' > filename). Ensure the script is safe and correctly escapes contents. Output ONLY the raw bash script inside a ```bash block. Do not include any other text or explanations."
-                  
-                  local function execute_deployment(deploy_response)
-                     if deploy_response:match("^ERROR") then
-                        log("\n> ⚠️ **Fallo al generar script de despliegue:** " .. deploy_response)
-                        return
-                     end
-
-                     local bash_script = deploy_response:match("```bash\n(.-)```") or deploy_response:match("```\n(.-)```") or deploy_response
-                     local f = io.open("deploy_ai.sh", "w")
-                     if f then
-                        f:write(bash_script)
-                        f:close()
-                        vim.fn.system("chmod +x deploy_ai.sh")
-                        log("\n> 💾 **Script guardado como `deploy_ai.sh` en el directorio actual.**")
-                        
-                        vim.schedule(function()
-                            vim.cmd("split deploy_ai.sh")
-                            local stop_beep = start_attention_beeper()
-                            local choice = vim.fn.confirm("¿Permitir al Arquitecto ejecutar deploy_ai.sh en tu entorno?", "&Sí\n&No", 2)
-                            stop_beep()
-                            
-                            if choice == 1 then
-                                log("\n> 🚀 **Ejecutando script automáticamente para crear el entorno...**")
-                                local output = vim.fn.system("./deploy_ai.sh")
-                                log("\n> 📋 **Salida del despliegue:**\n" .. (output == "" and "Archivos creados con éxito." or output))
-                                
-                                vim.defer_fn(function()
-                                   if vim.api.nvim_win_is_valid(win) then
-                                       vim.api.nvim_win_close(win, true)
-                                   end
-                                   if vim.api.nvim_buf_is_valid(buf) then
-                                       vim.api.nvim_buf_delete(buf, { force = true })
-                                   end
-                                   vim.notify("Orquestador finalizado y buffer cerrado para ahorrar memoria.", vim.log.levels.INFO)
-                                end, 3000)
-                            else
-                                log("\n> 🛑 **Despliegue cancelado. Puedes revisar y ejecutar `deploy_ai.sh` manualmente.**")
-                            end
-                        end)
-                     else
-                        log("\n> ⚠️ **Error al guardar deploy_ai.sh**")
-                     end
-                  end
-
-                  call_cloud(deploy_prompt, function(deploy_response)
-                     if deploy_response:match("^ERROR") then
-                        log(deploy_response)
-                        log("\n> ⚠️ **[Sistema]** Falló el Deployer Cloud. Iniciando fallback a Ollama...\n")
-                        call_ollama(deploy_prompt, function(fallback_deploy)
-                           execute_deployment(fallback_deploy)
-                        end)
-                        return
-                     end
-                     execute_deployment(deploy_response)
-                  end)
+                  start_deployment(code_response)
                else
                   log("### ❌ [Arquitecto] Revisión fallida. Comentarios:\n" .. review_response)
                   current_iter = current_iter + 1
@@ -324,8 +328,13 @@ function M.start_orchestration()
                      execute_architecture(revised_response)
                   end)
               else
-                  log("> ✅ **Plan Aprobado por el Usuario. Iniciando desarrollo...**\n")
-                  do_iteration(nil, nil)
+                  if arch_response:match("MODE:%s*EASY") then
+                      log("> ✅ **Código Aprobado por el Usuario (Delegación Inteligente).**\n")
+                      start_deployment(arch_response)
+                  else
+                      log("> ✅ **Plan Aprobado por el Usuario. Iniciando desarrollo...**\n")
+                      do_iteration(nil, nil)
+                  end
               end
           end)
       end)
