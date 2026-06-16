@@ -257,12 +257,15 @@ function M.start_orchestration()
       
       local function do_iteration(comments, previous_code)
          log("> **[Ollama Local (Turboquant)]** Iteración " .. current_iter .. "/" .. max_iter .. ". Escribiendo código...\n")
-         local ollama_prompt = "You are a Developer. Write the full code for this plan:\n" .. arch_response
-         if previous_code then
-            ollama_prompt = ollama_prompt .. "\n\nHere is your previously generated code that failed review:\n```\n" .. previous_code .. "\n```\n"
+         local ollama_prompt
+         if current_iter == 1 then
+            ollama_prompt = "You are a Developer. Write the full code for this plan:\n" .. arch_response
+         else
+            ollama_prompt = "You are a Developer. Here is your previously generated code:\n```\n" .. previous_code .. "\n```\n\nFix the code based EXACTLY on these comments:\n" .. comments
          end
-         if comments then
-            ollama_prompt = ollama_prompt .. "\n\nFix the code based on the Architect's review:\n" .. comments
+         
+         if vim.env.CAVEMAN_MODE == "true" then
+            ollama_prompt = ollama_prompt .. "\n\nCAVEMAN MODE: Output ONLY code. No chatter. Shortest possible fixes."
          end
          ollama_prompt = ollama_prompt .. "\nOutput ONLY the raw code inside standard markdown blocks (```). Do not include any other text."
 
@@ -274,7 +277,16 @@ function M.start_orchestration()
             
             log("> **[Ollama Local]** Código completado. Solicitando revisión iterativa...\n")
             
-            local review_prompt = "You are the Architect. Review this code against your plan:\n\nCODE:\n" .. code_response .. "\n\nPLAN:\n" .. arch_response .. "\n\nIf the code works perfectly and implements the plan, reply EXACTLY with the word 'APPROVED' (nothing else). If it has bugs or issues, reply with a very concise list of fixes."
+            local review_prompt
+            if current_iter == 1 then
+               review_prompt = "You are the Architect. Review this code against your plan:\n\nCODE:\n" .. code_response .. "\n\nPLAN:\n" .. arch_response .. "\n\nIf the code works perfectly and implements the plan, reply EXACTLY with the word 'APPROVED' (nothing else). If it has bugs or issues, reply with a very concise list of fixes."
+            else
+               review_prompt = "You are the Architect. You previously requested these fixes:\n" .. comments .. "\n\nReview the updated code to see if the fixes were applied:\n\nCODE:\n" .. code_response .. "\n\nIf the code works perfectly, reply EXACTLY with the word 'APPROVED' (nothing else). If it has remaining bugs, reply with a very concise list of fixes."
+            end
+            
+            if vim.env.CAVEMAN_MODE == "true" then
+               review_prompt = review_prompt .. "\n\nCAVEMAN MODE: Output 'APPROVED' or bare-bones bullet points of fixes. No explanations."
+            end
             
             local function handle_review(review_response)
                if review_response:match("APPROVED") then
@@ -322,6 +334,10 @@ function M.start_orchestration()
                   log("> **[Arquitecto Cloud]** Revisando plan...\n")
                   
                   local revision_prompt = "You are an AI Architect. Here is your previous plan:\n" .. arch_response .. "\n\nThe user provided this feedback: " .. feedback .. "\n\nPlease revise the plan accordingly. Provide ONLY the revised concise technical plan and pseudocode."
+                  
+                  if vim.env.CAVEMAN_MODE == "true" then
+                     revision_prompt = revision_prompt .. "\n\nCAVEMAN MODE: Output ONLY the updated technical plan. No apologies, no introductions. Shortest possible output."
+                  end
                   
                   call_cloud(revision_prompt, function(revised_response)
                      if revised_response:match("^ERROR") then
