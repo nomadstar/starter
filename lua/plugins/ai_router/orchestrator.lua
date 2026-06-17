@@ -197,12 +197,15 @@ function M.start_orchestration()
     vim.api.nvim_win_set_buf(win, buf)
     vim.api.nvim_buf_set_name(buf, "AI_Orchestrator_" .. math.random(1000))
     vim.bo[buf].filetype = "markdown"
-    vim.schedule(function() pcall(vim.treesitter.stop, buf) end)
+    pcall(vim.treesitter.stop, buf)
     
     local function log(msg)
+      if not vim.api.nvim_buf_is_valid(buf) then return end
       vim.api.nvim_buf_set_lines(buf, -1, -1, false, vim.split(msg, "\n"))
-      local count = vim.api.nvim_buf_line_count(buf)
-      vim.api.nvim_win_set_cursor(win, {count, 0})
+      if vim.api.nvim_win_is_valid(win) then
+          local count = vim.api.nvim_buf_line_count(buf)
+          pcall(vim.api.nvim_win_set_cursor, win, {count, 0})
+      end
     end
 
     log("# ORQUESTADOR MULTI-AGENTE INICIADO")
