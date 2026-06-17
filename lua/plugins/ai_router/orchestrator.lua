@@ -278,9 +278,18 @@ function M.start_orchestration()
                
                vim.schedule(function()
                    vim.cmd("split deploy_ai.sh")
+                   local deploy_win = vim.api.nvim_get_current_win()
+                   local deploy_buf = vim.api.nvim_get_current_buf()
                    local stop_beep = start_attention_beeper()
                    local choice = vim.fn.confirm("¿Permitir al Arquitecto ejecutar deploy_ai.sh en tu entorno?", "&Sí\n&No", 2)
                    stop_beep()
+                   
+                   if vim.api.nvim_win_is_valid(deploy_win) then
+                       pcall(vim.api.nvim_win_close, deploy_win, true)
+                   end
+                   if vim.api.nvim_buf_is_valid(deploy_buf) then
+                       pcall(vim.api.nvim_buf_delete, deploy_buf, { force = true })
+                   end
                    
                    if choice == 1 then
                        log("\n> 🚀 **Ejecutando script en nueva terminal interactiva...**")
@@ -289,8 +298,11 @@ function M.start_orchestration()
                        vim.cmd("split | terminal ./deploy_ai.sh")
                        
                        vim.defer_fn(function()
+                          if vim.api.nvim_win_is_valid(win) then
+                              pcall(vim.api.nvim_win_close, win, true)
+                          end
                           if vim.api.nvim_buf_is_valid(buf) then
-                              vim.api.nvim_buf_delete(buf, { force = true })
+                              pcall(vim.api.nvim_buf_delete, buf, { force = true })
                           end
                           vim.notify("Orquestador finalizado. Puedes ver la ejecución en la terminal.", vim.log.levels.INFO)
                        end, 1500)
