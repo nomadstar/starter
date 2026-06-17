@@ -291,13 +291,18 @@ function M.start_orchestration()
       local cwd = vim.fn.getcwd()
       local tree = vim.fn.system("find . -maxdepth 2 -not -path '*/\\.*' | sort")
 
-      local architecture_prompt = "You are an AI Architect. User wants: "
+      local architecture_prompt = "You are an AI Architect. Evaluate the task complexity:\n\nUser wants: "
         .. final_prompt
         .. "\n\n[ENVIRONMENT CONTEXT]\nWorking Directory: "
         .. cwd
         .. "\nExisting Files:\n"
         .. tree
-        .. "\nEvaluate the task's complexity using these STRICT rules:\n- MODE: EASY — ONLY if the result is a SINGLE file AND fewer than 50 lines. Write the full file content yourself and start your response EXACTLY with 'MODE: EASY'.\n- MODE: COMPLEX — If the task requires creating OR modifying MORE THAN ONE file, or involves multiple directories, or the content is long, do NOT write code. Start your response EXACTLY with 'MODE: COMPLEX' and provide a concise technical plan. At the VERY END of your plan, list ALL files to create/modify, one per line, starting EXACTLY with '[FILE] path/to/file'.\nWhen in doubt, always choose MODE: COMPLEX."
+        .. "\n\nSTRICT RULES:\n"
+        .. "1. If the task is TRIVIAL (e.g. a single simple script, 'Hello World', < 50 lines): Start exactly with 'MODE: FAST'. Then immediately write the code using this EXACT format:\n"
+        .. "### FILE: path/to/file\n```\n<code here>\n```\n"
+        .. "2. If the task requires multiple files, complex logic, or architecture: Start exactly with 'MODE: PLAN'. Produce a minimal plan ending with a list of files to generate in this EXACT format:\n"
+        .. "   [FILE] path/to/file | {one-line purpose}\n\n"
+        .. "Do not mix modes. When in doubt, use MODE: PLAN."
 
       log("> **[Arquitecto Cloud]** Analizando petición para minimizar tokens...\n")
 
@@ -392,40 +397,32 @@ function M.start_orchestration()
 
           local native_script = build_deploy_script_native(code_to_deploy)
           if native_script then
-            log("\n> ⚡ **[Sistema]** Construyendo script de despliegue nativamente (Evitando límites de tokens)...")
+            log("\n> ⚡ **[Sistema]** Construyendo script de despliegue nativamente...")
             execute_deployment(native_script)
           else
-            log("\n> ⏳ **[Arquitecto Cloud (Deployer)]** Construyendo el ejecutable de despliegue `deploy_ai.sh`...\n")
-            local deploy_prompt = "You are the Deployment Agent. The following code has been approved:\n\n"
-              .. code_to_deploy
-              .. "\n\nWrite a bash script that:\n1. Includes `trap 'rm -f deploy_ai.sh' EXIT` at the top to self-delete.\n2. Creates all necessary directories (using mkdir -p).\n3. Saves the code into the correct files (using cat << 'EOF' > filename).\n4. EXECUTES the necessary commands to compile and run the project.\n\nEnsure the script is safe and correctly escapes contents. Output ONLY the raw bash script inside a ```bash block. Do not include any other text."
-
-            call_cloud(deploy_prompt, function(deploy_response)
-              if deploy_response:match("^ERROR") then
-                log(deploy_response)
-                log("\n> ⚠️ **[Sistema]** Falló el Deployer Cloud. Fallback a Ollama...\n")
-                call_ollama(deploy_prompt, function(fallback_deploy)
-                  local bash_script = fallback_deploy:match("```bash\n(.-)```")
-                    or fallback_deploy:match("```\n(.-)```")
-                    or fallback_deploy
-                  execute_deployment(bash_script)
-                end)
-                return
-              end
-              local bash_script = deploy_response:match("```bash\n(.-)```")
-                or deploy_response:match("```\n(.-)```")
-                or deploy_response
-              execute_deployment(bash_script)
-            end)
+            log("\n> ⚠️ **[Sistema]** No se encontraron marcadores de archivo válidos. Despliegue abortado.")
           end
         end
 
         -- Extraer lista de archivos del plan
         local files = {}
-        for file in arch_response:gmatch("%[FILE%]%s*([%w_./-]+)") do
-          file = vim.trim(file)
-          if file ~= "" and not file:match("^[Mm][Oo][Dd][Ee]:") then
-            table.insert(files, file)
+        local file_purposes = {}
+        for filepath, purpose in arch_response:gmatch("%[FILE%]%s*([%w_./-]+)%s*|%s*([^\n\r]+)") do
+          local fp = vim.trim(filepath)
+          local p = vim.trim(purpose)
+          if fp ~= "" then
+            table.insert(files, fp)
+            file_purposes[fp] = p
+          end
+        end
+        if #files == 0 then
+          -- Fallback in case Architect didn't follow format exactly
+          for filepath in arch_response:gmatch("%[FILE%]%s*([%w_./-]+)") do
+            local fp = vim.trim(filepath)
+            if fp ~= "" then
+              table.insert(files, fp)
+              file_purposes[fp] = "General implementation"
+            end
           end
         end
         if #files == 0 then
@@ -466,10 +463,11 @@ function M.start_orchestration()
 
             local ollama_prompt
             if iter_count == 1 then
-              ollama_prompt = "You are a Developer. Write the full code for this specific file: "
-                .. current_file
-                .. ". Here is the overall plan for context:\n"
-                .. arch_response
+              local current_purpose = file_purposes[current_file] or "General implementation"
+              ollama_prompt = "You are a Developer implementing exactly ONE file.\n"
+                .. "FILE: " .. current_file .. "\n"
+                .. "PURPOSE: " .. current_purpose .. "\n\n"
+                .. "Overall Project Goal: " .. final_prompt .. "\n"
                 .. approved_context
             else
               ollama_prompt = "You are a Developer. You are fixing the file: "
@@ -493,34 +491,61 @@ function M.start_orchestration()
                 return
               end
 
-              log("> **[Ollama Local]** Código completado (" .. current_file .. "). Solicitando revisión iterativa...\n")
+              log("> **[Ollama Local]** Código completado (" .. current_file .. "). Auto-evaluando calidad...\n")
 
-              local review_prompt
-              if iter_count == 1 then
-                review_prompt = "You are the Architect. Review this code for the file "
-                  .. current_file
-                  .. " against your plan:\n\nCODE:\n"
-                  .. code_response
-                  .. "\n\nPLAN:\n"
-                  .. arch_response
-                  .. approved_context
-                  .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": \"list of fixes if any, or empty\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80."
-              else
-                review_prompt = "You are the Architect. You previously requested these fixes for "
-                  .. current_file
-                  .. ":\n"
-                  .. comments
-                  .. "\n\nReview the updated code:\n\nCODE:\n"
-                  .. code_response
-                  .. approved_context
-                  .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": \"list of fixes if any, or empty\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80."
-              end
-
+              local self_review_prompt = "You are an AI Self-Reviewer. Review the code you just generated for " .. current_file .. ".\n\nCODE:\n" .. code_response .. "\n\nIdentify any obvious bugs, missing implementations, or placeholders. You MUST reply with a raw JSON object: {\"score\": 100, \"fixes\": \"list of fixes or empty\"}. Score 90-100 if perfect, <90 if there are issues."
+              
               if vim.env.CAVEMAN_MODE == "true" then
-                review_prompt = review_prompt .. "\n\nCAVEMAN MODE: Output ONLY the raw JSON object. No markdown formatting, no explanations."
+                self_review_prompt = self_review_prompt .. "\nCAVEMAN MODE: Output ONLY the raw JSON object."
               end
 
-              local function handle_review(review_response)
+              call_ollama(self_review_prompt, function(self_review_response)
+                local json_str = self_review_response:match("{.*}") or self_review_response
+                local ok, data = pcall(vim.json.decode, json_str)
+                local self_score = 100
+                local self_fixes = ""
+                if ok and type(data) == "table" then
+                  self_score = tonumber(data.score) or 100
+                  self_fixes = data.fixes or ""
+                  if type(self_fixes) == "table" then self_fixes = vim.json.encode(self_fixes) end
+                end
+
+                if self_score >= 85 then
+                  log("> ✅ **[Ollama Auto-Review]** Score " .. self_score .. ". Aprobado localmente, sin escalado a Cloud.\n")
+                  log("### ✅ [Arquitecto] Archivo `" .. current_file .. "` APROBADO en iteración " .. iter_count .. "!")
+                  all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. code_response
+                  process_chunk(chunk_index + 1)
+                  return
+                end
+
+                log("> ⚠️ **[Ollama Auto-Review]** Score " .. self_score .. ". Escalando a Arquitecto Cloud para revisión profunda...\n")
+
+                local review_prompt
+                local line_count = select(2, code_response:gsub('\n', '\n')) + 1
+                if iter_count == 1 then
+                  review_prompt = "You are the Architect. The Developer generated code for "
+                    .. current_file .. " (Length: " .. line_count .. " lines).\n\n"
+                    .. "The Developer's self-review noted these issues:\n" .. self_fixes .. "\n\n"
+                    .. "Review the code against the overall purpose: " .. (file_purposes[current_file] or "General") .. "\n\nCODE:\n"
+                    .. code_response
+                    .. approved_context
+                    .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": \"list of fixes if any, or empty\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80."
+                else
+                  review_prompt = "You are the Architect. You previously requested these fixes for "
+                    .. current_file
+                    .. ":\n"
+                    .. comments
+                    .. "\n\nReview the updated code:\n\nCODE:\n"
+                    .. code_response
+                    .. approved_context
+                    .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": \"list of fixes if any, or empty\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80."
+                end
+
+                if vim.env.CAVEMAN_MODE == "true" then
+                  review_prompt = review_prompt .. "\n\nCAVEMAN MODE: Output ONLY the raw JSON object. No markdown formatting, no explanations."
+                end
+
+                local function handle_review(review_response)
                 local json_str = review_response:match("{.*}") or review_response
                 local ok, data = pcall(vim.json.decode, json_str)
 
@@ -601,6 +626,7 @@ function M.start_orchestration()
                 end
                 handle_review(review_response)
               end)
+              end)
             end)
           end
 
@@ -642,14 +668,11 @@ function M.start_orchestration()
                 end
                 execute_architecture(revised_response)
               end)
-            else
-              if arch_response:match("[Mm][Oo][Dd][Ee]:%s*[Ee][Aa][Ss][Yy]") then
-                log("> ✅ **Código Aprobado por el Usuario (Delegación Inteligente).**\n")
-                -- Limpiamos el string 'MODE: EASY' para no confundir al Cloud Deployer
-                local clean_easy = arch_response:gsub("^[Mm][Oo][Dd][Ee]:%s*[Ee][Aa][Ss][Yy]%s*", "")
-                start_deployment(clean_easy)
+              if arch_response:match("^[Mm][Oo][Dd][Ee]:%s*[Ff][Aa][Ss][Tt]") then
+                log("> ⚡ **[Fast Track]** Tarea simple detectada. Saltando escuadrón y desplegando directamente...\n")
+                start_deployment(arch_response)
               else
-                log("> ✅ **Plan Aprobado por el Usuario. Iniciando desarrollo...**\n")
+                log("> ✅ **Plan Aprobado por el Usuario. Iniciando Escuadrón (Ollama)...**\n")
                 process_chunk(1)
               end
             end
