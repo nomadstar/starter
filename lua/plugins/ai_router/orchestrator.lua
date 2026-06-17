@@ -297,7 +297,7 @@ function M.start_orchestration()
         .. cwd
         .. "\nExisting Files:\n"
         .. tree
-        .. "\nEvaluate the task's complexity. If it is very simple (e.g., small scripts, docs, single configs), write the FULL code yourself and start your response EXACTLY with 'MODE: EASY'. If it is complex (e.g., full apps, heavy logic, multiple files), do not write code, start your response EXACTLY with 'MODE: COMPLEX' and provide a concise technical plan. At the VERY END of your plan, list ALL the files that need to be created or modified, each on a new line starting EXACTLY with '[FILE] path/to/file'."
+        .. "\nEvaluate the task's complexity using these STRICT rules:\n- MODE: EASY — ONLY if the result is a SINGLE file AND fewer than 50 lines. Write the full file content yourself and start your response EXACTLY with 'MODE: EASY'.\n- MODE: COMPLEX — If the task requires creating OR modifying MORE THAN ONE file, or involves multiple directories, or the content is long, do NOT write code. Start your response EXACTLY with 'MODE: COMPLEX' and provide a concise technical plan. At the VERY END of your plan, list ALL files to create/modify, one per line, starting EXACTLY with '[FILE] path/to/file'.\nWhen in doubt, always choose MODE: COMPLEX."
 
       log("> **[Arquitecto Cloud]** Analizando petición para minimizar tokens...\n")
 
@@ -325,20 +325,7 @@ function M.start_orchestration()
         return script
       end
 
-      -- FIX #4: En modo EASY, normaliza la respuesta al formato ### FILE: antes de deploy
-      local function normalize_easy_response(arch_response)
-        -- Si el arquitecto en EASY ya trae bloques de código, los envolvemos en el formato esperado
-        local has_file_markers = arch_response:find("### FILE:", 1, true)
-        if has_file_markers then
-          return arch_response
-        end
-        -- Intentar extraer nombre de archivo del bloque de código (ej. ```python main.py)
-        local filename = arch_response:match("```[%w]*%s+([%w_./-]+)%s*\n")
-          or arch_response:match("# ([%w_./-]+%.[%w]+)")
-          or "main_output.txt"
-        local code = arch_response:match("```[%w]*\n(.-)```") or arch_response
-        return "### FILE: " .. filename .. "\n```\n" .. code .. "\n```"
-      end
+
 
       local function execute_architecture(arch_response)
         -- FIX #5: Validar respuesta del arquitecto
@@ -435,7 +422,7 @@ function M.start_orchestration()
 
         -- Extraer lista de archivos del plan
         local files = {}
-        for file in arch_response:gmatch("%[FILE%]%s*([^\n\r]+)") do
+        for file in arch_response:gmatch("%[FILE%]%s*([%w_./-]+)") do
           file = vim.trim(file)
           if file ~= "" and not file:match("^[Mm][Oo][Dd][Ee]:") then
             table.insert(files, file)
@@ -658,9 +645,9 @@ function M.start_orchestration()
             else
               if arch_response:match("[Mm][Oo][Dd][Ee]:%s*[Ee][Aa][Ss][Yy]") then
                 log("> ✅ **Código Aprobado por el Usuario (Delegación Inteligente).**\n")
-                -- FIX #4: normalizar respuesta EASY antes de enviar al deployer
-                local normalized = normalize_easy_response(arch_response)
-                start_deployment(normalized)
+                -- Limpiamos el string 'MODE: EASY' para no confundir al Cloud Deployer
+                local clean_easy = arch_response:gsub("^[Mm][Oo][Dd][Ee]:%s*[Ee][Aa][Ss][Yy]%s*", "")
+                start_deployment(clean_easy)
               else
                 log("> ✅ **Plan Aprobado por el Usuario. Iniciando desarrollo...**\n")
                 process_chunk(1)
