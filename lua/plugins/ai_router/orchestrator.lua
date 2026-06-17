@@ -328,8 +328,8 @@ function M.start_orchestration()
                      local code = part:sub(newline_idx + 1)
                      local clean_code = code:match("```[%w]*\n(.-)```") or code
                      local dir = filepath:match("(.+)/[^/]+$")
-                     if dir then script = script .. "mkdir -p " .. dir .. "\n" end
-                     script = script .. "cat > " .. filepath .. " << 'ENDOFFILE'\n" .. clean_code .. "\nENDOFFILE\n\n"
+                     if dir then script = script .. "mkdir -p \"" .. dir .. "\"\n" end
+                     script = script .. "cat > \"" .. filepath .. "\" << 'ENDOFFILE'\n" .. clean_code .. "\nENDOFFILE\n\n"
                      count = count + 1
                   end
                end
