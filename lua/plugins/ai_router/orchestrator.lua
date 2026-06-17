@@ -117,43 +117,63 @@ local function call_ollama(prompt, callback)
     system_prompt = "Talk like caveman. Cut filler words. Use minimal grammar. Keep technical accuracy. Shortest possible output.\n" .. anti_lazy
   end
 
-  local body = vim.json.encode({
-    model = model,
-    messages = {
-      { role = "system", content = system_prompt },
-      { role = "user",   content = prompt },
-    },
-    stream = false,
-    temperature = 0.1,
-    options = {
-      num_predict = tonumber(get_env("AGENT_LOCAL_MAX_PREDICT", "4096")),
-      num_ctx = tonumber(get_env("AGENT_LOCAL_MAX_CTX", "16384")),
-    },
-  })
+  local messages = {
+    { role = "system", content = system_prompt },
+    { role = "user",   content = prompt },
+  }
 
-  curl.post(url, {
-    body = body,
-    headers = { ["Content-Type"] = "application/json" },
-    callback = function(res)
-      if res.status ~= 200 then
-        vim.schedule(function()
-          callback("ERROR Ollama: " .. res.status .. " " .. res.body)
-        end)
-        return
-      end
-      local ok, data = pcall(vim.json.decode, res.body)
-      if not ok or not data or not data.message then
-        vim.schedule(function()
-          callback("ERROR Ollama: JSON decode failed")
-        end)
-        return
-      end
-      local text = data.message.content
-      vim.schedule(function()
-        callback(text)
-      end)
-    end,
-  })
+  local accumulated_text = ""
+  local continuation_count = 0
+  local max_continuations = 5 -- prevent infinite loops
+
+  local function send_request()
+    local body = vim.json.encode({
+      model = model,
+      messages = messages,
+      stream = false,
+      temperature = 0.1,
+      options = {
+        num_predict = tonumber(get_env("AGENT_LOCAL_MAX_PREDICT", "4096")),
+        num_ctx = tonumber(get_env("AGENT_LOCAL_MAX_CTX", "16384")),
+      },
+    })
+
+    curl.post(url, {
+      body = body,
+      headers = { ["Content-Type"] = "application/json" },
+      callback = function(res)
+        if res.status ~= 200 then
+          vim.schedule(function()
+            callback("ERROR Ollama: " .. res.status .. " " .. res.body)
+          end)
+          return
+        end
+        local ok, data = pcall(vim.json.decode, res.body)
+        if not ok or not data or not data.message then
+          vim.schedule(function()
+            callback("ERROR Ollama: JSON decode failed")
+          end)
+          return
+        end
+
+        accumulated_text = accumulated_text .. data.message.content
+
+        -- Si se cortó por límite de tokens (length), y no hemos excedido el máximo de continuaciones
+        if data.done_reason == "length" and continuation_count < max_continuations then
+          continuation_count = continuation_count + 1
+          table.insert(messages, { role = "assistant", content = data.message.content })
+          table.insert(messages, { role = "user", content = "Continue exactly where you left off. Do not repeat anything from before. Do not add introductory text. If you were inside a markdown block, continue writing raw code without opening a new markdown block." })
+          send_request()
+        else
+          vim.schedule(function()
+            callback(accumulated_text)
+          end)
+        end
+      end,
+    })
+  end
+
+  send_request()
 end
 
 local function start_attention_beeper()
