@@ -487,7 +487,8 @@ function M.start_orchestration()
          do_iteration(nil, nil)
       end
       
-      vim.schedule(function()
+      vim.defer_fn(function()
+          vim.cmd("redraw")
           local stop_beep = start_attention_beeper()
           vim.ui.input({ prompt = "Feedback al Arquitecto (Vacío para APROBAR): " }, function(feedback)
               stop_beep()
@@ -523,7 +524,7 @@ function M.start_orchestration()
                   end
               end
           end)
-      end)
+      end, 100)
     end
 
     call_cloud(architecture_prompt, function(arch_response)
