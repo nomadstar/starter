@@ -196,8 +196,7 @@ function M.start_orchestration()
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_win_set_buf(win, buf)
     vim.api.nvim_buf_set_name(buf, "AI_Orchestrator_" .. math.random(1000))
-    vim.bo[buf].filetype = "markdown"
-    pcall(vim.treesitter.stop, buf)
+    vim.bo[buf].syntax = "markdown"
     
     local function log(msg)
       if not vim.api.nvim_buf_is_valid(buf) then return end
