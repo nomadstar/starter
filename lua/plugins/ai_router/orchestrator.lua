@@ -126,7 +126,8 @@ local function call_ollama(prompt, callback)
     stream = false,
     temperature = 0.1,
     options = {
-      num_predict = tonumber(get_env("AGENT_LOCAL_MAX_PREDICT", "2048")),
+      num_predict = tonumber(get_env("AGENT_LOCAL_MAX_PREDICT", "4096")),
+      num_ctx = tonumber(get_env("AGENT_LOCAL_MAX_CTX", "16384")),
     },
   })
 
