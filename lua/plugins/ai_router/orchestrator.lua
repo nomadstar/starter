@@ -421,6 +421,11 @@ function M.start_orchestration()
                   if ok and type(data) == "table" then
                       score = tonumber(data.score) or 0
                       fixes = data.fixes or "Unknown error"
+                      if type(fixes) == "table" then
+                          fixes = vim.json.encode(fixes)
+                      elseif type(fixes) ~= "string" then
+                          fixes = tostring(fixes)
+                      end
                   else
                       log("\n> ⚠️ **[Sistema]** Falló el parseo JSON del Revisor. Asumiendo score 0.")
                   end
