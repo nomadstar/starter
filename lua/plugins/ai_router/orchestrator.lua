@@ -365,7 +365,10 @@ function M.start_orchestration()
       
       local files = {}
       for file in arch_response:gmatch("%[FILE%]%s*([^\n\r]+)") do
-         table.insert(files, vim.trim(file))
+         file = vim.trim(file)
+         if file ~= "" and not file:match("^[Mm][Oo][Dd][Ee]:") then
+            table.insert(files, file)
+         end
       end
       if #files == 0 then
          table.insert(files, "main_project")
