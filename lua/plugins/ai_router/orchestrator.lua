@@ -210,13 +210,28 @@ function M.start_orchestration()
 
     local function inject_files(text)
       return text:gsub("@([%w_./-]+)", function(filepath)
-        local f = io.open(filepath, "r")
-        if f then
-          local content = f:read("*a")
-          f:close()
-          return "\n\n--- INICIO DEL ARCHIVO: " .. filepath .. " ---\n" .. content .. "\n--- FIN DEL ARCHIVO ---\n\n"
+        if vim.fn.isdirectory(filepath) == 1 then
+          local output = "\n\n--- INICIO DEL DIRECTORIO: " .. filepath .. " ---\n"
+          local files = vim.fn.systemlist("find " .. vim.fn.shellescape(filepath) .. " -type f -not -path '*/\\.*'")
+          for _, f_path in ipairs(files) do
+             local fd = io.open(f_path, "r")
+             if fd then
+                 local content = fd:read("*a")
+                 fd:close()
+                 output = output .. "--- ARCHIVO: " .. f_path .. " ---\n" .. content .. "\n--- FIN DE ARCHIVO ---\n"
+             end
+          end
+          output = output .. "--- FIN DEL DIRECTORIO ---\n\n"
+          return output
         else
-          return " [Error: no se pudo leer el archivo " .. filepath .. "] "
+          local f = io.open(filepath, "r")
+          if f then
+            local content = f:read("*a")
+            f:close()
+            return "\n\n--- INICIO DEL ARCHIVO: " .. filepath .. " ---\n" .. content .. "\n--- FIN DEL ARCHIVO ---\n\n"
+          else
+            return " [Error: no se pudo leer el archivo/directorio " .. filepath .. "] "
+          end
         end
       end)
     end
@@ -306,34 +321,23 @@ function M.start_orchestration()
 
       log("> **[Arquitecto Cloud]** Analizando petición para minimizar tokens...\n")
 
-      -- FIX #4: build_deploy_script_native extrae bien tanto EASY como COMPLEX
-      local function build_deploy_script_native(generated_code)
-        local script = "#!/bin/bash\nset -e\ntrap 'rm -f deploy_ai.sh' EXIT\n\n"
-        local count = 0
-        local parts = vim.split(generated_code, "### FILE: ", { plain = true })
-        for _, part in ipairs(parts) do
-          part = vim.trim(part)
-          if part ~= "" then
-            local newline_idx = part:find("\n")
-            if newline_idx then
-              local filepath = vim.trim(part:sub(1, newline_idx - 1))
-              local code = part:sub(newline_idx + 1)
-              local clean_code = code:match("```[%w]*\n(.-)```") or code
-              local dir = filepath:match("(.+)/[^/]+$")
-              if dir then script = script .. "mkdir -p \"" .. dir .. "\"\n" end
-              script = script .. "cat > \"" .. filepath .. "\" << 'ENDOFFILE'\n" .. clean_code .. "\nENDOFFILE\n\n"
-              count = count + 1
-            end
-          end
+      -- Función para guardar un archivo individual de forma nativa en Lua
+      local function save_file_native(filepath, content)
+        local clean_code = content:match("```[%w]*\n(.-)```") or content
+        local dir = filepath:match("(.+)/[^/]+$")
+        if dir then
+          vim.fn.mkdir(dir, "p")
         end
-        if count == 0 then return nil end
-        return script
+        local f = io.open(filepath, "w")
+        if f then
+          f:write(clean_code)
+          f:close()
+          return true
+        end
+        return false
       end
 
-
-
       local function execute_architecture(arch_response)
-        -- FIX #5: Validar respuesta del arquitecto
         if not is_valid_response(arch_response) then
           log("\n> ⚠️ **[Sistema]** El Arquitecto devolvió una respuesta vacía. Abortando.")
           return
@@ -342,65 +346,27 @@ function M.start_orchestration()
         log("> **[Arquitecto] Plan generado:**\n" .. arch_response)
         log("\n---\n")
 
-        local function start_deployment(code_to_deploy)
-          local raw_code = code_to_deploy:match("```[%w]*\n(.-)```") or code_to_deploy
-          vim.fn.setreg("+", raw_code)
-          log("\n> 📋 **El código ha sido copiado a tu portapapeles temporalmente.**")
-
-          local function execute_deployment(bash_script)
-            local f = io.open("deploy_ai.sh", "w")
-            if f then
-              f:write(bash_script)
-              f:close()
-              vim.fn.system("chmod +x deploy_ai.sh")
-              log("\n> 💾 **Script generado como `deploy_ai.sh`.**")
-
-              vim.schedule(function()
-                vim.cmd("split deploy_ai.sh")
-                local deploy_win = vim.api.nvim_get_current_win()
-                local deploy_buf = vim.api.nvim_get_current_buf()
-                local stop_beep = start_attention_beeper()
-                local choice = vim.fn.confirm(
-                  "¿Permitir al Arquitecto ejecutar deploy_ai.sh en tu entorno?",
-                  "&Sí\n&No",
-                  2
-                )
-                stop_beep()
-
-                if vim.api.nvim_win_is_valid(deploy_win) then
-                  pcall(vim.api.nvim_win_close, deploy_win, true)
+        local function start_fast_track(code_to_deploy)
+          local count = 0
+          local parts = vim.split(code_to_deploy, "### FILE: ", { plain = true })
+          for _, part in ipairs(parts) do
+            part = vim.trim(part)
+            if part ~= "" then
+              local newline_idx = part:find("\n")
+              if newline_idx then
+                local filepath = vim.trim(part:sub(1, newline_idx - 1))
+                local code = part:sub(newline_idx + 1)
+                if save_file_native(filepath, code) then
+                  log("### 💾 Guardado en disco: `" .. filepath .. "`")
+                  count = count + 1
                 end
-                if vim.api.nvim_buf_is_valid(deploy_buf) then
-                  pcall(vim.api.nvim_buf_delete, deploy_buf, { force = true })
-                end
-
-                if choice == 1 then
-                  log("\n> 🚀 **Ejecutando script en nueva terminal interactiva...**")
-                  vim.cmd("split | terminal ./deploy_ai.sh")
-                  vim.defer_fn(function()
-                    if vim.api.nvim_win_is_valid(win) then
-                      pcall(vim.api.nvim_win_close, win, true)
-                    end
-                    if vim.api.nvim_buf_is_valid(buf) then
-                      pcall(vim.api.nvim_buf_delete, buf, { force = true })
-                    end
-                    vim.notify("Orquestador finalizado. Puedes ver la ejecución en la terminal.", vim.log.levels.INFO)
-                  end, 1500)
-                else
-                  log("\n> 🛑 **Despliegue cancelado. Puedes revisar y ejecutar `deploy_ai.sh` manualmente.**")
-                end
-              end)
-            else
-              log("\n> ⚠️ **Error al guardar deploy_ai.sh**")
+              end
             end
           end
-
-          local native_script = build_deploy_script_native(code_to_deploy)
-          if native_script then
-            log("\n> ⚡ **[Sistema]** Construyendo script de despliegue nativamente...")
-            execute_deployment(native_script)
+          if count > 0 then
+            log("\n> 🚀 **[Fast Track] Despliegue completado.** " .. count .. " archivo(s) guardado(s).")
           else
-            log("\n> ⚠️ **[Sistema]** No se encontraron marcadores de archivo válidos. Despliegue abortado.")
+            log("\n> ⚠️ **[Sistema]** No se encontraron marcadores de archivo válidos en Fast Track.")
           end
         end
 
@@ -435,8 +401,7 @@ function M.start_orchestration()
         -- sin ningún shadowing externo
         local function process_chunk(chunk_index)
           if chunk_index > #files then
-            log("\n> 🎯 **Todos los archivos han sido generados.** Iniciando despliegue...")
-            start_deployment(all_generated_code)
+            log("\n> 🎯 **Todos los archivos han sido generados y guardados en disco.**")
             return
           end
 
@@ -550,6 +515,9 @@ function M.start_orchestration()
 
                 if score >= 90 then
                   log("### ✅ [Arquitecto] Archivo `" .. current_file .. "` APROBADO (Score: " .. score .. ") en iteración " .. iter_count .. "!")
+                  if save_file_native(current_file, code_response) then
+                     log("### 💾 Guardado en disco: `" .. current_file .. "`")
+                  end
                   all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. code_response
                   process_chunk(chunk_index + 1)
                 elseif score >= 80 then
@@ -563,10 +531,12 @@ function M.start_orchestration()
                   call_cloud(patch_prompt, function(patch_response)
                     if patch_response:match("^ERROR") then
                       log("\n> ⚠️ **[Sistema]** Falló el parche en la nube. Forzando iteración local...")
-                      -- FIX #1: incrementar iter_count correctamente antes de recursar
                       iter_count = iter_count + 1
                       if iter_count > max_iter then
                         log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado para " .. current_file .. ". Aceptando tal como está.")
+                        if save_file_native(current_file, code_response) then
+                           log("### 💾 Guardado en disco: `" .. current_file .. "`")
+                        end
                         all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. code_response
                         process_chunk(chunk_index + 1)
                       else
@@ -578,15 +548,20 @@ function M.start_orchestration()
                     log("\n> ☁️ **[Cloud Developer]** Cambios aplicados en `" .. current_file .. "`:\n" .. patch_response)
                     local patched_code = patch_response:match("```[%w]*\n(.-)```") or patch_response
                     log("\n### ✅ [Sistema] Archivo `" .. current_file .. "` APROBADO vía parche Cloud!")
+                    if save_file_native(current_file, patched_code) then
+                       log("### 💾 Guardado en disco: `" .. current_file .. "`")
+                    end
                     all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. patched_code
                     process_chunk(chunk_index + 1)
                   end)
                 else
                   log("### ❌ [Arquitecto] Revisión fallida para " .. current_file .. " (Score: " .. score .. "). Comentarios:\n" .. fixes)
-                  -- FIX #1: incrementar iter_count correctamente
                   iter_count = iter_count + 1
                   if iter_count > max_iter then
                     log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado para " .. current_file .. ". Aceptando tal como está.")
+                    if save_file_native(current_file, code_response) then
+                       log("### 💾 Guardado en disco: `" .. current_file .. "`")
+                    end
                     all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. code_response
                     process_chunk(chunk_index + 1)
                   else
@@ -655,8 +630,8 @@ function M.start_orchestration()
               end)
             else
               if arch_response:match("^[Mm][Oo][Dd][Ee]:%s*[Ff][Aa][Ss][Tt]") then
-                log("> ⚡ **[Fast Track]** Tarea simple detectada. Saltando escuadrón y desplegando directamente...\n")
-                start_deployment(arch_response)
+                log("> ⚡ **[Fast Track]** Tarea simple detectada. Guardando archivo(s) nativamente...\n")
+                start_fast_track(arch_response)
               else
                 log("> ✅ **Plan Aprobado por el Usuario. Iniciando Escuadrón (Ollama)...**\n")
                 process_chunk(1)
