@@ -66,16 +66,21 @@ Based on the principle of *"why waste time say lot word when few word do trick"*
 
 ## 🤖 Multi-Agent Orchestrator (Mode 3 / `<leader>am`)
 
-The Orchestrator is the crown jewel of this environment. It's a fully asynchronous, highly-advanced master-slave workflow featuring Chunking, JSON Triage, and Web Access:
+The Orchestrator is the crown jewel of this environment. It's a fully asynchronous, highly-advanced master-slave workflow where you act as the Director.
 
-1. **Context Injection & Autocomplete:** When prompted for a task, you can inject entire files by typing `@path/to/file` (supports `<Tab>` autocomplete!). You can also paste URLs (e.g. `https://docs.rs/serde`), and the system will fetch the docs as clean Markdown using *Jina Reader*.
-2. **Design Chat & Dynamic Chunking:** The **Cloud Architect** evaluates if the task is easy or complex. If complex, it will design a technical plan breaking the work into individual files (Chunks) to prevent memory saturation, asking for your interactive *Feedback*.
-3. **Development & JSON Triage:** The **Local Developer** (Ollama) writes the code file by file. The Architect reviews each one and assigns a strict JSON score (0-100).
+1. **Context Injection, Folders & Web:** When prompted for a task, you can inject entire files or folders by typing `@path/to/file/` (supports `<Tab>` autocomplete!). You can also paste URLs (e.g. `https://docs.rs/serde`), and the system will fetch the website as clean Markdown using *Jina Reader*.
+2. **Architecture & Special Modes:** The **Cloud Architect** evaluates the task complexity and designs a technical plan breaking the work into individual files (Chunks), asking for your interactive *Feedback*. It features intelligent modes:
+   - **`MODE: PLAN`**: Complex logic and source code generation.
+   - **`MODE: FAST`**: Trivial tasks (< 50 lines) straight to code.
+   - **`MODE: DOCS`**: (Exclusive on explicit user request). Disables *Caveman Mode* and forces the generation of highly exhaustive encyclopedias and documentation without summarization.
+3. **Telegram Remote Control:** Monitor and command your AI squadron right from your smartphone. The system broadcasts live logs via Telegram and performs *Long Polling*. You can approve plans by sending `/approve`, provide feedback text, or stop a rogue AI by sending `/kill` 😈.
+4. **Infinite Context (Recursive Continuation):** Say goodbye to "truncated files". If Ollama runs out of output tokens, the orchestrator concatenates the generated text, silently re-prompts the model to "continue exactly where it left off", and loops this process invisibly until massive chapters are completed.
+5. **Self-Review (Defend Your Code) & JSON Triage:** The **Local Developer** (Ollama) writes the code and then must self-evaluate by sending a JSON defense to the Cloud Architect. The Architect assigns a strict final score (0-100).
    - **Score >= 90:** Directly approved.
    - **Score 80-89:** Minor error. The Cloud Architect surgically patches the code on the fly.
-   - **Score < 80:** Major error. Ollama is forced to rewrite it completely with specific fixes.
-4. **Safe Native Deployment:** Upon completing all chunks, the system natively builds a self-deleting Bash script (`deploy_ai.sh`) to physically create all folders and files, asking for your confirmation before execution.
-5. **Memory & Context Isolation:** The Architect has a "short-term memory" that prevents it from hallucinating or forgetting previously approved files, making it rock-solid for large repositories.
+   - **Score < 80:** Major error. Ollama is forced to rewrite it completely with specific instructions.
+6. **Incremental Native Deployment:** Every time a chunk is approved, it is immediately built and saved to your hard drive natively using pure Lua. No need to wait for the entire project to finish to see results!
+7. **Memory & Context Isolation:** The Architect has an automatically injected "short-term memory" that reminds it which files have already been successfully built, preventing it from hallucinating or forgetting context.
 
 ## ⌨️ Commands and Keymaps
 

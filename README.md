@@ -66,16 +66,21 @@ Basado en el principio de *"por qué usar muchas palabras si pocas funcionan"*. 
 
 ## 🤖 Orquestador Multi-Agente (Modo 3 / `<leader>am`)
 
-El Orquestador es la joya de la corona de este entorno. Es un flujo de trabajo maestro-esclavo asíncrono y ultra-avanzado donde tú actúas como el Director. Posee arquitectura de Chunking, Triage por puntuación y acceso web:
+El Orquestador es la joya de la corona de este entorno. Es un flujo de trabajo maestro-esclavo asíncrono y ultra-avanzado donde tú actúas como el Director.
 
-1. **Inyección de Contexto y Autocompletado:** Al pedir la tarea, puedes inyectar archivos enteros escribiendo `@ruta/al/archivo` (¡soporta `<Tab>` para autocompletar!). También puedes pegar URLs (ej. `https://docs.rs/serde`) y el sistema descargará la documentación en Markdown limpio usando *Jina Reader*.
-2. **Chat de Diseño y Chunking Dinámico:** El **Arquitecto Cloud** analizará si la tarea es sencilla o compleja. Si es compleja, diseñará un plan técnico dividiendo el trabajo en archivos individuales (Chunks) para no saturar la memoria, y te pedirá *Feedback* interactivo.
-3. **Desarrollo y Triage JSON:** El **Desarrollador Local** (Ollama) escribirá el código de cada archivo uno por uno. El Arquitecto lo revisará y le asignará un puntaje estricto (Score 0-100).
+1. **Inyección de Contexto, Carpetas y Web:** Al pedir la tarea, puedes inyectar archivos o carpetas enteras escribiendo `@ruta/al/archivo/` (¡soporta `<Tab>` para autocompletar!). También puedes pegar URLs (ej. `https://docs.rs/serde`) y el sistema descargará la web en Markdown limpio usando *Jina Reader*.
+2. **Arquitectura y Modos Especiales:** El **Arquitecto Cloud** diseña el plan técnico y divide el trabajo en archivos (Chunks) pidiéndote *Feedback*. Posee modos inteligentes:
+   - **`MODE: PLAN`**: Tareas complejas y de código fuente.
+   - **`MODE: FAST`**: Tareas triviales (< 50 líneas) directas a código.
+   - **`MODE: DOCS`**: (Exclusivo si el usuario lo pide). Desactiva el *Modo Cavernícola* y obliga a escribir enciclopedias y documentación exhaustiva sin resúmenes.
+3. **Control Remoto Vía Telegram:** Monitorea y dirige todo el escuadrón desde tu teléfono móvil. El sistema envía logs en vivo por Telegram y hace *Long Polling*. Puedes aprobar planes escribiendo `/approve` en Telegram, dar feedback de correcciones, o detener una IA rebelde escribiendo `/kill` 😈.
+4. **Contexto Infinito (Continuación Recursiva):** Se acabaron los "archivos cortados por la mitad". Si Ollama se queda sin tokens de salida, el orquestador concatena lo generado, reinyecta el prompt pidiendo que continúe exactamente donde se quedó, y repite este ciclo en bucle invisible hasta que termina capítulos gigantes.
+5. **Autoevaluación (Defiende tu Código) y Triage JSON:** El **Desarrollador Local** (Ollama) escribe el código y luego debe auto-evaluarse mandando un JSON al Arquitecto de la Nube para defender su trabajo. El Arquitecto impone el puntaje final estricto (Score 0-100).
    - **Score >= 90:** Aprobado directamente.
-   - **Score 80-89:** Error menor. El Arquitecto de la nube lo parchea quirúrgicamente sobre la marcha.
+   - **Score 80-89:** Error menor. El Arquitecto de la nube lo parchea quirúrgicamente.
    - **Score < 80:** Error grave. Se fuerza a Ollama a reescribir con instrucciones específicas.
-4. **Despliegue Nativo Seguro:** Al finalizar todos los chunks, el sistema construirá nativamente un script Bash auto-destruible (`deploy_ai.sh`) para crear todas las carpetas y archivos físicos, pidiéndote confirmación antes de ejecutarlo.
-5. **Memoria y Aislamiento:** El Arquitecto posee una "memoria a corto plazo" que le impide olvidar los archivos que ya fueron aprobados, evitando alucinaciones clásicas de pérdida de contexto en grandes repositorios.
+6. **Despliegue Nativo Incremental:** Cada vez que un chunk es aprobado, se crea y guarda inmediatamente de forma nativa en tu disco duro (con Lua puro). ¡No tienes que esperar a que todo el proyecto termine para ver los resultados!
+7. **Memoria y Aislamiento:** El Arquitecto posee una "memoria a corto plazo" inyectada automáticamente que le recuerda qué archivos ya fueron construidos y aprobados, evitando repetición y pérdida de contexto.
 
 ## ⌨️ Comandos y Atajos (Keymaps)
 
