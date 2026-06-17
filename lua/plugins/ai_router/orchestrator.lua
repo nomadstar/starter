@@ -486,12 +486,7 @@ function M.start_orchestration()
             ollama_prompt = ollama_prompt .. "\nOutput ONLY the raw code inside standard markdown blocks (```). Do not include any other text."
 
             call_ollama(ollama_prompt, function(code_response)
-              if code_response:match("^ERROR") then
-                log(code_response)
-                return
-              end
-
-              log("> **[Ollama Local]** Código completado (" .. current_file .. "). Auto-evaluando calidad...\n")
+              log("> **[Ollama Local]** Código completado (" .. current_file .. "). Auto-evaluando (El estudiante defiende su código)...\n")
 
               local self_review_prompt = "You are an AI Self-Reviewer. Review the code you just generated for " .. current_file .. ".\n\nCODE:\n" .. code_response .. "\n\nIdentify any obvious bugs, missing implementations, or placeholders. You MUST reply with a raw JSON object: {\"score\": 100, \"fixes\": \"list of fixes or empty\"}. Score 90-100 if perfect, <90 if there are issues."
               
@@ -500,32 +495,22 @@ function M.start_orchestration()
               end
 
               call_ollama(self_review_prompt, function(self_review_response)
-                local json_str = self_review_response:match("{.*}") or self_review_response
-                local ok, data = pcall(vim.json.decode, json_str)
-                local self_score = 100
+                local self_json_str = self_review_response:match("{.*}") or self_review_response
+                local ok, data = pcall(vim.json.decode, self_json_str)
                 local self_fixes = ""
                 if ok and type(data) == "table" then
-                  self_score = tonumber(data.score) or 100
                   self_fixes = data.fixes or ""
                   if type(self_fixes) == "table" then self_fixes = vim.json.encode(self_fixes) end
                 end
 
-                if self_score >= 85 then
-                  log("> ✅ **[Ollama Auto-Review]** Score " .. self_score .. ". Aprobado localmente, sin escalado a Cloud.\n")
-                  log("### ✅ [Arquitecto] Archivo `" .. current_file .. "` APROBADO en iteración " .. iter_count .. "!")
-                  all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. code_response
-                  process_chunk(chunk_index + 1)
-                  return
-                end
-
-                log("> ⚠️ **[Ollama Auto-Review]** Score " .. self_score .. ". Escalando a Arquitecto Cloud para revisión profunda...\n")
+                log("> **[Ollama Auto-Review]** Evaluado localmente. Enviando defensa al Arquitecto Cloud para veredicto final...\n")
 
                 local review_prompt
                 local line_count = select(2, code_response:gsub('\n', '\n')) + 1
                 if iter_count == 1 then
                   review_prompt = "You are the Architect. The Developer generated code for "
                     .. current_file .. " (Length: " .. line_count .. " lines).\n\n"
-                    .. "The Developer's self-review noted these issues:\n" .. self_fixes .. "\n\n"
+                    .. "The Developer's self-review (defense) noted these issues:\n" .. self_fixes .. "\n\n"
                     .. "Review the code against the overall purpose: " .. (file_purposes[current_file] or "General") .. "\n\nCODE:\n"
                     .. code_response
                     .. approved_context
@@ -668,6 +653,7 @@ function M.start_orchestration()
                 end
                 execute_architecture(revised_response)
               end)
+            else
               if arch_response:match("^[Mm][Oo][Dd][Ee]:%s*[Ff][Aa][Ss][Tt]") then
                 log("> ⚡ **[Fast Track]** Tarea simple detectada. Saltando escuadrón y desplegando directamente...\n")
                 start_deployment(arch_response)
