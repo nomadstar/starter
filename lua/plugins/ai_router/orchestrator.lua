@@ -109,13 +109,9 @@ local function call_ollama(prompt, callback)
   local url = get_env("OLLAMA_HOST", "http://localhost:11434") .. "/api/chat"
   local model = get_env("AGENT_LOCAL_MODEL", "llama3")
 
-  local system_prompt = "You are a helpful AI."
+  local system_prompt = "You are an Expert Senior Developer. Your task is to write exhaustive, production-grade, and deeply detailed code/documentation."
   local anti_lazy = "CRITICAL: You are an autonomous system. Do NOT use placeholders, comments like 'rest of code here', or summaries. You MUST write the ENTIRE implementation for ALL requested files. Skipping code will break the deployment."
   system_prompt = system_prompt .. "\n" .. anti_lazy
-
-  if vim.env.CAVEMAN_MODE == "true" then
-    system_prompt = "Talk like caveman. Cut filler words. Use minimal grammar. Keep technical accuracy. Shortest possible output.\n" .. anti_lazy
-  end
 
   local messages = {
     { role = "system", content = system_prompt },
@@ -336,7 +332,9 @@ function M.start_orchestration()
         .. "\n\nSTRICT RULES:\n"
         .. "1. If the task is TRIVIAL (e.g. a single simple script, 'Hello World', < 50 lines): Start exactly with 'MODE: FAST'. Then immediately write the code using this EXACT format:\n"
         .. "### FILE: path/to/file\n```\n<code here>\n```\n"
-        .. "2. If the task requires multiple files, complex logic, or architecture: Start exactly with 'MODE: PLAN'. Produce a minimal plan ending with a list of files to generate in this EXACT format:\n"
+        .. "2. If the user EXPLICITLY requests extensive documentation (e.g. using keywords like 'docs', 'documentación', 'manual', 'enciclopedia') AND the task involves NO source code logic: Start exactly with 'MODE: DOCS'. Do NOT use this mode if the user wants to generate software code, otherwise they will reject the plan. Produce a minimal plan ending with a list of files to generate in this EXACT format:\n"
+        .. "   [FILE] path/to/file | {one-line purpose}\n"
+        .. "3. If the task requires multiple files, complex logic, or architecture: Start exactly with 'MODE: PLAN'. Produce a minimal plan ending with a list of files to generate in this EXACT format:\n"
         .. "   [FILE] path/to/file | {one-line purpose}\n\n"
         .. "Do not mix modes. When in doubt, use MODE: PLAN."
 
@@ -444,17 +442,37 @@ function M.start_orchestration()
           -- FIX #1: iter_count es local a este chunk, sin ningún shadowing
           local iter_count = 1
 
+          local is_docs_mode = arch_response:match("^[Mm][Oo][Dd][Ee]:%s*[Dd][Oo][Cc][Ss]") ~= nil
+
           local function do_iteration(comments, previous_code)
             log("> **[Ollama Local (Turboquant)]** Iteración " .. iter_count .. "/" .. max_iter .. ". Escribiendo código...\n")
 
             local ollama_prompt
+            local current_purpose = file_purposes[current_file] or "General implementation"
+
             if iter_count == 1 then
-              local current_purpose = file_purposes[current_file] or "General implementation"
-              ollama_prompt = "You are a Developer implementing exactly ONE file.\n"
-                .. "FILE: " .. current_file .. "\n"
-                .. "PURPOSE: " .. current_purpose .. "\n\n"
-                .. "Overall Project Goal: " .. final_prompt .. "\n"
-                .. approved_context
+              if is_docs_mode then
+                ollama_prompt = "You are an Expert Technical Writer and Architect implementing exactly ONE file.\n"
+                  .. "FILE: " .. current_file .. "\n"
+                  .. "PURPOSE: " .. current_purpose .. "\n\n"
+                  .. "Overall Project Goal: " .. final_prompt .. "\n\n"
+                  .. "CRITICAL INSTRUCTIONS FOR MODE DOCS:\n"
+                  .. "- You MUST write EXCEPTIONAL, EXTENSIVE, and DEEPLY COMPREHENSIVE documentation.\n"
+                  .. "- The document MUST be Complete (cover all edge cases), Precise (technically flawless), Concise in format but exhaustive in content, and Unambiguous.\n"
+                  .. "- Caveman mode is TEMPORARILY DISABLED for this file. You are FREE and REQUIRED to write as much detailed text as necessary to fully cover the topic.\n"
+                  .. "- NEVER summarize. NEVER output a 'bare minimum' skeleton.\n"
+                  .. approved_context
+              else
+                ollama_prompt = "You are an Expert Developer implementing exactly ONE file.\n"
+                  .. "FILE: " .. current_file .. "\n"
+                  .. "PURPOSE: " .. current_purpose .. "\n\n"
+                  .. "Overall Project Goal: " .. final_prompt .. "\n\n"
+                  .. "CRITICAL INSTRUCTIONS:\n"
+                  .. "- If this is a documentation file or chapter, write EXTENSIVELY. Cover all edge cases, explain deeply, and be highly comprehensive. Do not summarize.\n"
+                  .. "- If this is a code file, write the complete, robust, production-ready code with exhaustive comments.\n"
+                  .. "- NEVER output a 'bare minimum' or 'skeleton' version. Your output MUST be final and thoroughly detailed.\n"
+                  .. approved_context
+              end
             else
               ollama_prompt = "You are a Developer. You are fixing the file: "
                 .. current_file
@@ -464,7 +482,7 @@ function M.start_orchestration()
                 .. comments
             end
 
-            if vim.env.CAVEMAN_MODE == "true" then
+            if vim.env.CAVEMAN_MODE == "true" and not is_docs_mode then
               ollama_prompt = ollama_prompt .. "\n\nCAVEMAN MODE: Output ONLY code. No chatter. Shortest possible fixes."
             end
             local anti_lazy = "CRITICAL: You are an autonomous system. Do NOT use placeholders, comments like 'rest of code here', or summaries. You MUST write the ENTIRE implementation for ALL requested files. Skipping code will break the deployment."
@@ -653,6 +671,9 @@ function M.start_orchestration()
               if arch_response:match("^[Mm][Oo][Dd][Ee]:%s*[Ff][Aa][Ss][Tt]") then
                 log("> ⚡ **[Fast Track]** Tarea simple detectada. Guardando archivo(s) nativamente...\n")
                 start_fast_track(arch_response)
+              elseif arch_response:match("^[Mm][Oo][Dd][Ee]:%s*[Dd][Oo][Cc][Ss]") then
+                log("> 📚 **[Docs Mode]** Tarea de documentación detectada. Caveman desactivado temporalmente. Iniciando Escuadrón...\n")
+                process_chunk(1)
               else
                 log("> ✅ **Plan Aprobado por el Usuario. Iniciando Escuadrón (Ollama)...**\n")
                 process_chunk(1)
