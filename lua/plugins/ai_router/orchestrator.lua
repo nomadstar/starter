@@ -197,6 +197,7 @@ function M.start_orchestration()
     vim.api.nvim_win_set_buf(win, buf)
     vim.api.nvim_buf_set_name(buf, "AI_Orchestrator_" .. math.random(1000))
     vim.bo[buf].filetype = "markdown"
+    vim.schedule(function() pcall(vim.treesitter.stop, buf) end)
     
     local function log(msg)
       vim.api.nvim_buf_set_lines(buf, -1, -1, false, vim.split(msg, "\n"))
