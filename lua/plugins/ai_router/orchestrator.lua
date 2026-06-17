@@ -1,5 +1,6 @@
 local M = {}
 local curl = require("plenary.curl")
+local telegram = require("plugins.ai_router.telegram")
 
 local function get_env(var, default)
   local v = vim.env[var]
@@ -268,6 +269,9 @@ function M.start_orchestration()
       if vim.api.nvim_win_is_valid(win) then
         local count = vim.api.nvim_buf_line_count(buf)
         pcall(vim.api.nvim_win_set_cursor, win, { count, 0 })
+      end
+      if telegram.is_enabled() then
+        telegram.send_message(msg)
       end
     end
 
@@ -636,8 +640,24 @@ function M.start_orchestration()
         vim.schedule(function()
           vim.cmd("redraw")
           local stop_beep = start_attention_beeper()
-          vim.ui.input({ prompt = "Feedback al Arquitecto (Vacío para APROBAR): " }, function(feedback)
+
+          local feedback_processed = false
+
+          local function process_feedback(feedback, from_telegram)
+            if feedback_processed then return end
+            feedback_processed = true
             stop_beep()
+            telegram.stop_polling()
+
+            if from_telegram then
+              vim.schedule(function()
+                local esc = vim.api.nvim_replace_termcodes("<C-c>", true, false, true)
+                vim.api.nvim_feedkeys(esc, "n", false)
+              end)
+            end
+
+            if feedback == false then return end -- Aborted locally
+
             if feedback and feedback ~= "" then
               log("> **[Usuario] Feedback al Arquitecto:** " .. feedback .. "\n")
               log("> **[Arquitecto Cloud]** Revisando plan...\n")
@@ -679,6 +699,22 @@ function M.start_orchestration()
                 process_chunk(1)
               end
             end
+          end
+
+          telegram.poll_for_reply(function(reply)
+            process_feedback(reply, true)
+          end, function()
+            log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
+            telegram.stop_polling()
+            if not feedback_processed then
+               feedback_processed = true
+               local esc = vim.api.nvim_replace_termcodes("<C-c>", true, false, true)
+               vim.api.nvim_feedkeys(esc, "n", false)
+            end
+          end)
+
+          vim.ui.input({ prompt = "Feedback al Arquitecto (Vacío para APROBAR): " }, function(feedback)
+            process_feedback(feedback, false)
           end)
         end)
       end
