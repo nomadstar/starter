@@ -240,7 +240,7 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
     end
 
     local model_list_str = table.concat(local_models, ", ")
-    review_prompt = review_prompt .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": [\"list of fixes if any\"],\n  \"cooperation_notes\": \"notas breves sobre como colaboraron los modelos locales\",\n  \"cooperation_scores\": \"model1=80, model2=90\"\n}\nIMPORTANT: Use the ACTUAL model names that participated (" .. model_list_str .. ") in the cooperation_scores string. They signed their work with '# Esto lo hizo [model_name]'. If the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80. The score MUST be a NUMERIC INTEGER."
+    review_prompt = review_prompt .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": [\"list of fixes if any\"],\n  \"cooperation_notes\": \"notas breves sobre como colaboraron los modelos locales\",\n  \"cooperation_scores\": \"model1=80, model2=90\",\n  \"suggested_subtasks\": [{\"file\": \"path/to/new_file.md\", \"purpose\": \"reason for creation\"}]\n}\nIMPORTANT: Use the ACTUAL model names that participated (" .. model_list_str .. ") in the cooperation_scores string. If the code introduces concepts that are too dense and deserve their own dedicated file, propose them in suggested_subtasks (can be empty). If the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80. The score MUST be a NUMERIC INTEGER."
 
     if vim.env.CAVEMAN_MODE == "true" then
       review_prompt = review_prompt .. "\n\nCAVEMAN MODE: Output ONLY the raw JSON object. No markdown formatting, no explanations."
@@ -254,11 +254,15 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
       local fixes = review_response
       local coop_notes = ""
       local coop_scores = ""
+      local suggested_subtasks = {}
       if ok2 and type(data2) == "table" then
         score = tonumber(data2.score) or 0
         fixes = data2.fixes or "Unknown error"
         coop_notes = data2.cooperation_notes or ""
         coop_scores = data2.cooperation_scores or ""
+        if type(data2.suggested_subtasks) == "table" then
+          suggested_subtasks = data2.suggested_subtasks
+        end
         if type(fixes) == "table" then
           fixes = vim.json.encode(fixes)
         elseif type(fixes) ~= "string" then
