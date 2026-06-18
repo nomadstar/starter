@@ -96,6 +96,7 @@ Una vez configurado tu `.env`, puedes invocar al sistema con los siguientes ataj
 | `<leader>ai` | **Inline AI** | Escribe un prompt directamente sobre el código seleccionado para refactorizar en la misma línea. |
 | `<leader>am` | **Multi-Agent (Manual)** | Abre la interfaz de colaboración donde un Arquitecto (Cloud) diseña minimizado y el Desarrollador (Ollama) escribe el código. Se revisan mutuamente (Max 3 veces). |
 | `<leader>af` | **Report Failure** | Si ves que la API actual te da errores 429 (Límite alcanzado), pulsa este atajo para obligar al sistema a "saltar" permanentemente a la siguiente IA de tu lista de Fallback. |
+| `:AiRouterToggle` | **Ocultar/Mostrar UI** | (Comando de Neovim o presionar `q`) Oculta la ventana del Orquestador al fondo sin matar el proceso. Ejecútalo de nuevo para volver a ver los logs. |
 | `:AiRouterKill` | **Kill Switch** | (Comando de Neovim) Aborta inmediatamente la generación asíncrona de los agentes y apaga el orquestador. |
 
 ---

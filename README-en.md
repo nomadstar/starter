@@ -96,6 +96,7 @@ Once your `.env` is configured, you can invoke the system with the following key
 | `<leader>ai` | **Inline AI** | Write a prompt directly over the selected code to refactor it in-line. |
 | `<leader>am` | **Multi-Agent (Manual)** | Opens the collaboration interface where an Architect (Cloud) creates a minimized design and the Developer (Ollama) writes the code. They review each other (Max 3 times). |
 | `<leader>af` | **Report Failure** | If you see the current API returning 429 errors (Limit Reached), press this to force the system to permanently "jump" to the next AI in your Fallback list. |
+| `:AiRouterToggle` | **Toggle UI** | (Neovim Command or press `q`) Hides the Orchestrator window to the background without killing the process. Run it again to summon the window back. |
 | `:AiRouterKill` | **Kill Switch** | (Neovim Command) Instantly aborts the asynchronous generation of the agents and kills the orchestrator. |
 
 ---
