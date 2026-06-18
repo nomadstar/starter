@@ -56,5 +56,34 @@ function M.jina_fetch(url, callback)
     end
   })
 end
+function M.read_local_context(path)
+  local expanded = vim.fn.expand(path)
+  if vim.fn.isdirectory(expanded) == 1 then
+    local files = vim.fn.globpath(expanded, "**/*", 0, 1)
+    local context = ""
+    local max_files = 30
+    local count = 0
+    for _, f in ipairs(files) do
+      if vim.fn.isdirectory(f) == 0 and not f:match("/%.git/") and not f:match("/node_modules/") and not f:match("/target/") and not f:match("%.jpg$") and not f:match("%.png$") then
+        count = count + 1
+        if count > max_files then
+          context = context .. "\n\n--- [WARNING: TOO MANY FILES IN FOLDER, TRUNCATED] ---\n"
+          break
+        end
+        local content = M.read_local_context(f)
+        context = context .. content
+      end
+    end
+    return context
+  elseif vim.fn.filereadable(expanded) == 1 then
+    local file = io.open(expanded, "r")
+    if file then
+      local content = file:read("*a")
+      file:close()
+      return "\n\n--- CONTENIDO DE " .. expanded .. " ---\n" .. content
+    end
+  end
+  return ""
+end
 
 return M
