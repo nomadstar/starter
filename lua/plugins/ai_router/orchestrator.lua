@@ -436,15 +436,45 @@ function M.start_orchestration()
 
         -- FIX #1: current_iter declarada DENTRO de process_chunk, una por archivo,
         -- sin ningún shadowing externo
+        local function dump_state(current_file, chunk_index)
+          local state = "# AI Router - Orchestrator State (Brain)\n\n"
+          state = state .. "## Meta del Proyecto\n" .. final_prompt .. "\n\n"
+          state = state .. "## Plan del Arquitecto\n" .. arch_response .. "\n\n"
+          state = state .. "## Memoria a Corto Plazo (Archivos Aprobados)\n"
+          if chunk_index > 1 then
+            for i = 1, chunk_index - 1 do
+              state = state .. "- `[x]` " .. files[i] .. "\n"
+            end
+          else
+            state = state .. "*Ninguno todavía*\n"
+          end
+          
+          state = state .. "\n## Tarea Actual\n"
+          if current_file then
+            state = state .. "- `[/]` Trabajando en: **" .. current_file .. "** (Iteración actual)\n"
+          else
+            state = state .. "- `[x]` **¡Todos los archivos completados!**\n"
+          end
+
+          local f = io.open(".ai_router_state.md", "w")
+          if f then
+            f:write(state)
+            f:close()
+          end
+        end
+
         local function process_chunk(chunk_index)
           if chunk_index > #files then
             log("\n> 🎯 **Todos los archivos han sido generados y guardados en disco.**")
+            log("> 📄 El estado final de la memoria se ha guardado en `.ai_router_state.md`")
+            dump_state(nil, chunk_index)
             stop_inhibit()
             return
           end
 
           local current_file = files[chunk_index]
           log("\n> 📦 **Procesando archivo (" .. chunk_index .. "/" .. #files .. "):** `" .. current_file .. "`")
+          dump_state(current_file, chunk_index)
 
           local approved_context = ""
           if chunk_index > 1 then
@@ -539,7 +569,7 @@ function M.start_orchestration()
                     .. "Review the code against the overall purpose: " .. (file_purposes[current_file] or "General") .. "\n\nCODE:\n"
                     .. code_response
                     .. approved_context
-                    .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": \"list of fixes if any, or empty\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80."
+                    .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": [\"list of fixes if any\"]\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80. IMPORTANT: The score MUST be a NUMERIC INTEGER (e.g. 85), NEVER a word like 'eighty'."
                 else
                   review_prompt = "You are the Architect. You previously requested these fixes for "
                     .. current_file
@@ -548,7 +578,7 @@ function M.start_orchestration()
                     .. "\n\nReview the updated code:\n\nCODE:\n"
                     .. code_response
                     .. approved_context
-                    .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": \"list of fixes if any, or empty\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80."
+                    .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": [\"list of fixes if any\"]\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80. IMPORTANT: The score MUST be a NUMERIC INTEGER (e.g. 85), NEVER a word like 'eighty'."
                 end
 
                 if vim.env.CAVEMAN_MODE == "true" then
@@ -679,11 +709,17 @@ function M.start_orchestration()
               log("> **[Usuario] Feedback al Arquitecto:** " .. feedback .. "\n")
               log("> **[Arquitecto Cloud]** Revisando plan...\n")
 
+              local format_rules = "\n\nSTRICT RULES FOR OUTPUT:\n"
+                .. "Produce a minimal plan ending with a list of files to generate in this EXACT format:\n"
+                .. "   [FILE] path/to/file | {one-line purpose}\n\n"
+                .. "Failure to use the [FILE] format will break the system. NEVER output filenames in a different format."
+
               local revision_prompt = "You are an AI Architect. Here is your previous plan:\n"
                 .. arch_response
                 .. "\n\nThe user provided this feedback: "
                 .. feedback
                 .. "\n\nPlease revise the plan accordingly. Provide ONLY the revised concise technical plan and pseudocode."
+                .. format_rules
 
               if vim.env.CAVEMAN_MODE == "true" then
                 revision_prompt = revision_prompt .. "\n\nCAVEMAN MODE: Output ONLY the updated technical plan. No apologies, no introductions. Shortest possible output."
