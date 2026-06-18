@@ -10,6 +10,10 @@ function M.start_orchestration()
     require("plugins.ai_router.api").kill_all()
     require("plugins.ai_router.ui").log("\n> 💀 **[Sistema]** Ejecución abortada localmente (AiRouterKill).")
   end, {})
+  
+  vim.api.nvim_create_user_command("AiRouterToggle", function()
+    require("plugins.ai_router.ui").toggle_floating_window()
+  end, {})
 
   local buf, win = ui.create_floating_window()
 

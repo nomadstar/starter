@@ -12,8 +12,9 @@ function M.create_floating_window()
     end
   else
     floating_buf = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_option(floating_buf, "bufhidden", "wipe")
+    vim.api.nvim_buf_set_option(floating_buf, "bufhidden", "hide")
     vim.api.nvim_buf_set_option(floating_buf, "filetype", "markdown")
+    vim.api.nvim_buf_set_keymap(floating_buf, "n", "q", "<cmd>hide<CR>", { noremap = true, silent = true })
   end
 
   local width = math.floor(vim.o.columns * 0.8)
@@ -29,12 +30,24 @@ function M.create_floating_window()
     col = col,
     style = "minimal",
     border = "rounded",
-    title = " 🤖 AI Router (Orquestador Multi-Agente) ",
+    title = " 🤖 AI Router (Orquestador Multi-Agente) [q=Ocultar] ",
     title_pos = "center",
   })
 
   vim.api.nvim_win_set_option(floating_win, "wrap", true)
   return floating_buf, floating_win
+end
+
+function M.toggle_floating_window()
+  if floating_win and vim.api.nvim_win_is_valid(floating_win) then
+    vim.api.nvim_win_hide(floating_win)
+  else
+    if floating_buf and vim.api.nvim_buf_is_valid(floating_buf) then
+      M.create_floating_window()
+    else
+      vim.notify("No hay ninguna sesión activa del Orquestador", vim.log.levels.INFO)
+    end
+  end
 end
 
 function M.log(msg)
