@@ -1,20 +1,17 @@
 local M = {}
 local curl = require("plenary.curl")
-
-local function get_env(name)
-  return vim.env[name] or ""
-end
+local utils = require("plugins.ai_router.utils")
 
 function M.is_enabled()
-  local token = get_env("TELEGRAM_BOT_TOKEN")
-  local chat_id = get_env("TELEGRAM_CHAT_ID")
+  local token = utils.get_env("TELEGRAM_BOT_TOKEN")
+  local chat_id = utils.get_env("TELEGRAM_CHAT_ID")
   return token ~= "" and chat_id ~= ""
 end
 
 function M.send_message(text)
   if not M.is_enabled() then return end
-  local token = get_env("TELEGRAM_BOT_TOKEN")
-  local chat_id = get_env("TELEGRAM_CHAT_ID")
+  local token = utils.get_env("TELEGRAM_BOT_TOKEN")
+  local chat_id = utils.get_env("TELEGRAM_CHAT_ID")
   local url = "https://api.telegram.org/bot" .. token .. "/sendMessage"
 
   -- Limpiar el markdown complejo que telegram no soporta bien
@@ -40,8 +37,8 @@ function M.poll_for_reply(callback, on_kill)
   if is_polling then return end
 
   is_polling = true
-  local token = get_env("TELEGRAM_BOT_TOKEN")
-  local chat_id = get_env("TELEGRAM_CHAT_ID")
+  local token = utils.get_env("TELEGRAM_BOT_TOKEN")
+  local chat_id = utils.get_env("TELEGRAM_CHAT_ID")
   local url = "https://api.telegram.org/bot" .. token .. "/getUpdates"
 
   local function do_poll()

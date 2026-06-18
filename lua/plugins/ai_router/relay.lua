@@ -179,7 +179,8 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
         .. approved_context
     end
 
-    review_prompt = review_prompt .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": [\"list of fixes if any\"],\n  \"cooperation_notes\": \"notas breves sobre como colaboraron los modelos locales\",\n  \"cooperation_scores\": \"modelA=80, modelB=90\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80. IMPORTANT: The score MUST be a NUMERIC INTEGER."
+    local model_list_str = table.concat(local_models, ", ")
+    review_prompt = review_prompt .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": [\"list of fixes if any\"],\n  \"cooperation_notes\": \"notas breves sobre como colaboraron los modelos locales\",\n  \"cooperation_scores\": \"model1=80, model2=90\"\n}\nIMPORTANT: Use the ACTUAL model names that participated (" .. model_list_str .. ") in the cooperation_scores string. They signed their work with '# Esto lo hizo [model_name]'. If the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80. The score MUST be a NUMERIC INTEGER."
 
     if vim.env.CAVEMAN_MODE == "true" then
       review_prompt = review_prompt .. "\n\nCAVEMAN MODE: Output ONLY the raw JSON object. No markdown formatting, no explanations."

