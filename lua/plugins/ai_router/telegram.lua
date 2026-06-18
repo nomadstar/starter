@@ -40,6 +40,8 @@ function M.poll_for_reply(callback, on_kill)
   local token = utils.get_env("TELEGRAM_BOT_TOKEN")
   local chat_id = utils.get_env("TELEGRAM_CHAT_ID")
   local url = "https://api.telegram.org/bot" .. token .. "/getUpdates"
+  
+  local start_time = os.time()
 
   local function do_poll()
     if not is_polling then return end
@@ -54,22 +56,25 @@ function M.poll_for_reply(callback, on_kill)
             for _, update in ipairs(data.result) do
               last_update_id = update.update_id
               if update.message and update.message.chat and tostring(update.message.chat.id) == tostring(chat_id) and update.message.text then
-                local text = update.message.text
-                if text == "/kill" then
-                  is_polling = false
-                  if on_kill then
-                    vim.schedule(function() on_kill() end)
+                local msg_time = update.message.date or 0
+                if msg_time >= start_time - 5 then
+                  local text = update.message.text
+                  if text == "/kill" then
+                    is_polling = false
+                    if on_kill then
+                      vim.schedule(function() on_kill() end)
+                    end
+                    return
+                  elseif text == "/approve" or text == "/ok" then
+                    is_polling = false
+                    vim.schedule(function() callback("") end)
+                    return
+                  else
+                    -- Enviar cualquier otro texto como feedback
+                    is_polling = false
+                    vim.schedule(function() callback(text) end)
+                    return
                   end
-                  return
-                elseif text == "/approve" or text == "/ok" then
-                  is_polling = false
-                  vim.schedule(function() callback("") end)
-                  return
-                else
-                  -- Enviar cualquier otro texto como feedback
-                  is_polling = false
-                  vim.schedule(function() callback(text) end)
-                  return
                 end
               end
             end
