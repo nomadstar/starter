@@ -226,6 +226,20 @@ function M.start_orchestration()
   }, function(user_prompt)
     if not user_prompt or user_prompt == "" then return end
 
+    local inhibit_job_id = -1
+    if vim.fn.executable("systemd-inhibit") == 1 then
+      inhibit_job_id = vim.fn.jobstart({
+        "systemd-inhibit", "--what=sleep:idle", "--who=Neovim AI Router", "--why=Orquestador trabajando", "sleep", "86400"
+      })
+    end
+
+    local function stop_inhibit()
+      if inhibit_job_id > 0 then
+        pcall(vim.fn.jobstop, inhibit_job_id)
+        inhibit_job_id = -1
+      end
+    end
+
     local function inject_files(text)
       return text:gsub("@([%w_./-]+)", function(filepath)
         if vim.fn.isdirectory(filepath) == 1 then
@@ -425,6 +439,7 @@ function M.start_orchestration()
         local function process_chunk(chunk_index)
           if chunk_index > #files then
             log("\n> 🎯 **Todos los archivos han sido generados y guardados en disco.**")
+            stop_inhibit()
             return
           end
 
@@ -443,44 +458,46 @@ function M.start_orchestration()
               .. current_file
           end
 
-          -- FIX #1: iter_count es local a este chunk, sin ningún shadowing
           local iter_count = 1
 
           local is_docs_mode = arch_response:match("^[Mm][Oo][Dd][Ee]:%s*[Dd][Oo][Cc][Ss]") ~= nil
+
+          local current_purpose = file_purposes[current_file] or "General implementation"
+          local base_prompt = ""
+
+          if is_docs_mode then
+            base_prompt = "You are an Expert Technical Writer and Architect implementing exactly ONE file.\n"
+              .. "FILE: " .. current_file .. "\n"
+              .. "PURPOSE: " .. current_purpose .. "\n\n"
+              .. "Overall Project Goal: " .. final_prompt .. "\n\n"
+              .. "CRITICAL INSTRUCTIONS FOR MODE DOCS:\n"
+              .. "- You MUST write EXCEPTIONAL, EXTENSIVE, and DEEPLY COMPREHENSIVE documentation.\n"
+              .. "- The document MUST be Complete (cover all edge cases), Precise (technically flawless), Concise in format but exhaustive in content, and Unambiguous.\n"
+              .. "- Caveman mode is TEMPORARILY DISABLED for this file. You are FREE and REQUIRED to write as much detailed text as necessary to fully cover the topic.\n"
+              .. "- NEVER summarize. NEVER output a 'bare minimum' skeleton.\n"
+              .. approved_context
+          else
+            base_prompt = "You are an Expert Developer implementing exactly ONE file.\n"
+              .. "FILE: " .. current_file .. "\n"
+              .. "PURPOSE: " .. current_purpose .. "\n\n"
+              .. "Overall Project Goal: " .. final_prompt .. "\n\n"
+              .. "CRITICAL INSTRUCTIONS:\n"
+              .. "- If this is a documentation file or chapter, write EXTENSIVELY. Cover all edge cases, explain deeply, and be highly comprehensive. Do not summarize.\n"
+              .. "- If this is a code file, write the complete, robust, production-ready code with exhaustive comments.\n"
+              .. "- NEVER output a 'bare minimum' or 'skeleton' version. Your output MUST be final and thoroughly detailed.\n"
+              .. approved_context
+          end
 
           local function do_iteration(comments, previous_code)
             log("> **[Ollama Local (Turboquant)]** Iteración " .. iter_count .. "/" .. max_iter .. ". Escribiendo código...\n")
 
             local ollama_prompt
-            local current_purpose = file_purposes[current_file] or "General implementation"
-
             if iter_count == 1 then
-              if is_docs_mode then
-                ollama_prompt = "You are an Expert Technical Writer and Architect implementing exactly ONE file.\n"
-                  .. "FILE: " .. current_file .. "\n"
-                  .. "PURPOSE: " .. current_purpose .. "\n\n"
-                  .. "Overall Project Goal: " .. final_prompt .. "\n\n"
-                  .. "CRITICAL INSTRUCTIONS FOR MODE DOCS:\n"
-                  .. "- You MUST write EXCEPTIONAL, EXTENSIVE, and DEEPLY COMPREHENSIVE documentation.\n"
-                  .. "- The document MUST be Complete (cover all edge cases), Precise (technically flawless), Concise in format but exhaustive in content, and Unambiguous.\n"
-                  .. "- Caveman mode is TEMPORARILY DISABLED for this file. You are FREE and REQUIRED to write as much detailed text as necessary to fully cover the topic.\n"
-                  .. "- NEVER summarize. NEVER output a 'bare minimum' skeleton.\n"
-                  .. approved_context
-              else
-                ollama_prompt = "You are an Expert Developer implementing exactly ONE file.\n"
-                  .. "FILE: " .. current_file .. "\n"
-                  .. "PURPOSE: " .. current_purpose .. "\n\n"
-                  .. "Overall Project Goal: " .. final_prompt .. "\n\n"
-                  .. "CRITICAL INSTRUCTIONS:\n"
-                  .. "- If this is a documentation file or chapter, write EXTENSIVELY. Cover all edge cases, explain deeply, and be highly comprehensive. Do not summarize.\n"
-                  .. "- If this is a code file, write the complete, robust, production-ready code with exhaustive comments.\n"
-                  .. "- NEVER output a 'bare minimum' or 'skeleton' version. Your output MUST be final and thoroughly detailed.\n"
-                  .. approved_context
-              end
+              ollama_prompt = base_prompt
             else
-              ollama_prompt = "You are a Developer. You are fixing the file: "
-                .. current_file
-                .. ". Here is your previously generated code:\n```\n"
+              ollama_prompt = base_prompt .. "\n\n=================================\n\n"
+                .. "You are currently FIXING this file based on the Architect's feedback.\n"
+                .. "Here is your previously generated code:\n```\n"
                 .. previous_code
                 .. "\n```\n\nFix the code based EXACTLY on these comments:\n"
                 .. comments
@@ -706,6 +723,7 @@ function M.start_orchestration()
           end, function()
             log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
             telegram.stop_polling()
+            stop_inhibit()
             if not feedback_processed then
                feedback_processed = true
                local esc = vim.api.nvim_replace_termcodes("<C-c>", true, false, true)
