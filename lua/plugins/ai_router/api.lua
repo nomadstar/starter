@@ -103,6 +103,17 @@ function M.call_cloud(prompt, callback)
           callback(text)
         end)
       end,
+      on_error = function(err)
+        vim.schedule(function()
+          if index < #models then
+            ui.log("\n> ⚠️ **[Sistema]** Fallo de red con " .. current_model .. ". Intentando con fallback...", vim.log.levels.WARN)
+            try_model(index + 1)
+          else
+            callback("ERROR Cloud Network: " .. vim.inspect(err))
+          end
+        end)
+      end,
+      timeout = 300000, -- 5 minutos
     })
     table.insert(_G.AI_ROUTER_ACTIVE_JOBS, job)
   end
@@ -130,7 +141,7 @@ function M.call_ollama(model, prompt, callback)
     local body = vim.json.encode({
       model = model,
       messages = messages,
-      stream = false,
+      stream = true,
       temperature = 0.1,
       options = {
         num_predict = tonumber(utils.get_env("AGENT_LOCAL_MAX_PREDICT", "4096")),
@@ -143,6 +154,30 @@ function M.call_ollama(model, prompt, callback)
     local job = curl.post(url, {
       body = body,
       headers = { ["Content-Type"] = "application/json" },
+      stream = function(err, data)
+        if err or not data then return end
+        
+        vim.schedule(function()
+          local lines = vim.split(data, "\n")
+          for _, line in ipairs(lines) do
+            if line ~= "" then
+              local ok, json = pcall(vim.json.decode, line)
+              if ok and json.message and json.message.content then
+                accumulated_text = accumulated_text .. json.message.content
+                require("plugins.ai_router.ui").log_stream(json.message.content)
+                if json.done and json.done_reason == "length" then
+                   if continuation_count < max_continuations then
+                     continuation_count = continuation_count + 1
+                     table.insert(messages, { role = "user", content = "Continue EXACTLY from where you left off. Do not repeat anything. Output ONLY the continuation of the code or markdown block." })
+                     send_request()
+                     return
+                   end
+                end
+              end
+            end
+          end
+        end)
+      end,
       callback = function(res)
         if res.status ~= 200 then
           vim.schedule(function()
@@ -150,28 +185,21 @@ function M.call_ollama(model, prompt, callback)
           end)
           return
         end
-        local ok, data = pcall(vim.json.decode, res.body)
-        if not ok or not data or not data.message then
-          vim.schedule(function()
-            callback("ERROR Ollama: JSON decode failed")
-          end)
-          return
-        end
 
-        accumulated_text = accumulated_text .. (data.message.content or "")
+        table.insert(messages, { role = "assistant", content = accumulated_text })
 
-        table.insert(messages, { role = "assistant", content = data.message.content or "" })
-
-        if data.done_reason == "length" and continuation_count < max_continuations then
-          continuation_count = continuation_count + 1
-          table.insert(messages, { role = "user", content = "Continue EXACTLY from where you left off. Do not repeat anything. Output ONLY the continuation of the code or markdown block." })
-          send_request()
-        else
-          vim.schedule(function()
-            callback(accumulated_text)
-          end)
-        end
+        -- The stream callback handles the length continuation, so here we just return the final text
+        vim.schedule(function()
+          require("plugins.ai_router.ui").log_stream("\n")
+          callback(accumulated_text)
+        end)
       end,
+      on_error = function(err)
+        vim.schedule(function()
+          callback("ERROR Ollama Network: " .. vim.inspect(err))
+        end)
+      end,
+      timeout = 3600000, -- 1 hora (Ollama local puede ser muy lento)
     })
     table.insert(_G.AI_ROUTER_ACTIVE_JOBS, job)
   end

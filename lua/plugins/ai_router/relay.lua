@@ -396,7 +396,21 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
           .. final_code
           .. "\n\nFix the code. Return the fixed code inside a markdown block. BEFORE the code block, briefly list the exact changes you made (verbose log)."
 
+        local is_cloud_working = true
+        local patch_states = {
+          "🧐 [Cloud] Leyendo feedback de revisión...",
+          "🛠️ [Cloud] Aplicando parche sobre el código original..."
+        }
+        for i, st in ipairs(patch_states) do
+          vim.defer_fn(function()
+            if is_cloud_working and not _G.AI_ROUTER_KILLED then
+               require("plugins.ai_router.ui").log_stream("\n> " .. st)
+            end
+          end, i * 3000)
+        end
+
         api.call_cloud(patch_prompt, function(patch_response)
+          is_cloud_working = false
           if patch_response:match("^ERROR") then
             ui.log("\n> ⚠️ **[Sistema]** Falló el parche en la nube. Forzando iteración local...")
             callback("retry", fixes, nil)
@@ -433,7 +447,22 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
       end
     end
 
+    local is_cloud_working = true
+    local states = {
+      "🧐 [Cloud] Leyendo sumisión del Developer...",
+      "🧠 [Cloud] Analizando arquitectura y edge cases...",
+      "📋 [Cloud] Redactando reporte de revisión..."
+    }
+    for i, st in ipairs(states) do
+      vim.defer_fn(function()
+        if is_cloud_working and not _G.AI_ROUTER_KILLED then
+           require("plugins.ai_router.ui").log_stream("\n> " .. st)
+        end
+      end, i * 3000)
+    end
+
     api.call_cloud(review_prompt, function(review_response)
+      is_cloud_working = false
       if review_response:match("^ERROR") then
         ui.log(review_response)
         ui.log("\n> ⚠️ **[Sistema]** Falló el Revisor Cloud. Fallback a Ollama...\n")

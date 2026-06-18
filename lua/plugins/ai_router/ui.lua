@@ -67,6 +67,26 @@ function M.log(msg)
   end)
 end
 
+function M.log_stream(msg)
+  local buf = floating_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then return end
+  
+  vim.schedule(function()
+    local line_count = vim.api.nvim_buf_line_count(buf)
+    local last_line = vim.api.nvim_buf_get_lines(buf, line_count - 1, line_count, false)[1] or ""
+    
+    local new_text = last_line .. msg
+    local new_lines = vim.split(new_text, "\n")
+    
+    vim.api.nvim_buf_set_lines(buf, line_count - 1, line_count, false, new_lines)
+    
+    if floating_win and vim.api.nvim_win_is_valid(floating_win) then
+      local current_line_count = vim.api.nvim_buf_line_count(buf)
+      vim.api.nvim_win_set_cursor(floating_win, { current_line_count, 0 })
+    end
+  end)
+end
+
 function M.start_attention_beeper()
   local noisy = utils.get_env("AGENT_NOISY_MODE", "false")
   if noisy ~= "true" then return function() end end
