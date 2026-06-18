@@ -70,16 +70,16 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
     local function run_next_model()
       if model_idx > #local_models then
         -- Forward declare or call finish_relay
-        M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, approved_context, comments, local_models, function(next_action, patch, best_model)
+        M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, approved_context, comments, local_models, function(next_action, patch, best_model, suggested_subtasks)
           vim.schedule(function()
             vim.cmd("redraw")
             local stop_beep = ui.start_attention_beeper()
             local telegram = require("plugins.ai_router.telegram")
-            local feedback_processed = false
+            local code_logged = false
 
-            local function process_human_feedback(feedback, from_telegram)
-              if feedback_processed then return end
-              feedback_processed = true
+            local process_human_feedback, ask_human_approval, process_subtasks_feedback, ask_subtasks_approval
+
+            process_human_feedback = function(feedback, from_telegram)
               stop_beep()
               telegram.stop_polling()
 
@@ -92,7 +92,18 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
 
               if feedback == false then return end -- Aborted locally
 
-              if feedback and feedback ~= "" then
+              if feedback and (feedback:match("^/question") or feedback:match("^/q ")) then
+                local question = feedback:gsub("^/question%s*", ""):gsub("^/q%s*", "")
+                ui.log("\n> 🗣️ **[Humano -> Arquitecto]**: " .. question)
+                local q_prompt = "You are the Cloud Architect. The user asks a question about the code for " .. current_file .. ".\n\nUSER QUESTION:\n" .. question .. "\n\nCODE CONTEXT:\n" .. patch
+                require("plugins.ai_router.api").call_cloud(q_prompt, function(ans)
+                   ui.log("\n> ☁️ **[Arquitecto Responde]**:\n" .. ans .. "\n")
+                   ask_human_approval()
+                end)
+                return
+              end
+
+              if feedback and feedback ~= "" and feedback ~= "/approve" and feedback ~= "/ok" then
                 ui.log("> 🧑‍💼 **[Director Humano]** Rechaza el archivo y exige: " .. feedback)
                 ui.log("\n---\n")
                 -- Treat human feedback as a retry constraint
@@ -100,9 +111,13 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
                 telegram.start_background_monitor()
                 do_iteration(feedback, current_code, nil)
               else
-                -- Human approved (Empty feedback)
+                -- Human approved (Empty feedback or /approve)
                 if next_action == "next_chunk" then
-                  M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+                  if suggested_subtasks and #suggested_subtasks > 0 then
+                    ask_subtasks_approval(suggested_subtasks)
+                  else
+                    M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+                  end
                 elseif next_action == "retry" then
                   iter_count = iter_count + 1
                   if iter_count > max_iter then
@@ -120,31 +135,117 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
               end
             end
 
-            local prompt_msg = "¿Aprobar " .. current_file .. "? (Vacío=SI, Texto=Feedback/Corregir): "
-            if next_action == "retry" then
-              prompt_msg = "Reescribir " .. current_file .. " (Vacío=Permitir Reescritura, Texto=Añadir feedback extra): "
+            ask_human_approval = function()
+              local prompt_msg = "¿Aprobar " .. current_file .. "? (Vacío=SI, Texto=Corregir, /q=Duda): "
+              if next_action == "retry" then
+                prompt_msg = "Reescribir " .. current_file .. " (Vacío=Permitir, Texto=Añadir feedback, /q=Duda): "
+              end
+              
+              telegram.stop_background_monitor()
+
+              if not code_logged then
+                ui.log("\n### 📝 Contenido Propuesto para `" .. current_file .. "`:\n```\n" .. patch .. "\n```\n")
+                code_logged = true
+              end
+              ui.log("⏳ **Esperando decisión del Director Humano...** (Responde en Neovim o envía /approve en Telegram)\n")
+
+              local feedback_processed = false
+              telegram.poll_for_reply(function(reply)
+                if feedback_processed then return end
+                feedback_processed = true
+                process_human_feedback(reply, true)
+              end, function()
+                ui.log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
+                telegram.stop_polling()
+                if not feedback_processed then
+                   feedback_processed = true
+                   local esc = vim.api.nvim_replace_termcodes("<C-c>", true, false, true)
+                   vim.api.nvim_feedkeys(esc, "n", false)
+                end
+              end)
+
+              vim.ui.input({ prompt = prompt_msg }, function(feedback)
+                if feedback_processed then return end
+                feedback_processed = true
+                process_human_feedback(feedback, false)
+              end)
             end
             
-            telegram.stop_background_monitor()
-
-            ui.log("\n### 📝 Contenido Propuesto para `" .. current_file .. "`:\n```\n" .. patch .. "\n```\n")
-            ui.log("⏳ **Esperando decisión del Director Humano...** (Responde en Neovim o envía /approve en Telegram)\n")
-
-            telegram.poll_for_reply(function(reply)
-              process_human_feedback(reply, true)
-            end, function()
-              ui.log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
+            process_subtasks_feedback = function(feedback, from_telegram, subtasks)
+              stop_beep()
               telegram.stop_polling()
-              if not feedback_processed then
-                 feedback_processed = true
-                 local esc = vim.api.nvim_replace_termcodes("<C-c>", true, false, true)
-                 vim.api.nvim_feedkeys(esc, "n", false)
-              end
-            end)
 
-            vim.ui.input({ prompt = prompt_msg }, function(feedback)
-              process_human_feedback(feedback, false)
-            end)
+              if from_telegram then
+                vim.schedule(function()
+                  local esc = vim.api.nvim_replace_termcodes("<C-c>", true, false, true)
+                  vim.api.nvim_feedkeys(esc, "n", false)
+                end)
+              end
+              
+              if feedback == false then return end -- Aborted locally
+
+              if feedback and (feedback:match("^/question") or feedback:match("^/q ")) then
+                local question = feedback:gsub("^/question%s*", ""):gsub("^/q%s*", "")
+                ui.log("\n> 🗣️ **[Humano -> Arquitecto]**: " .. question)
+                local q_prompt = "You are the Cloud Architect. The user asks a question about the suggested subtasks:\n" .. question
+                require("plugins.ai_router.api").call_cloud(q_prompt, function(ans)
+                   ui.log("\n> ☁️ **[Arquitecto Responde]**:\n" .. ans .. "\n")
+                   ask_subtasks_approval(subtasks)
+                end)
+                return
+              end
+              
+              if feedback and feedback:match("^[Nn][Oo]") then
+                ui.log("> 🧑‍💼 **[Director Humano]** Descarta las subtareas sugeridas.")
+              else
+                ui.log("> 🧑‍💼 **[Director Humano]** Aprueba añadir las " .. #subtasks .. " nuevas tareas a la cola.")
+                -- Insert directly into the array after chunk_index
+                for i = #subtasks, 1, -1 do
+                  local subtask = subtasks[i]
+                  if subtask.file and subtask.purpose then
+                    table.insert(files, chunk_index + 1, subtask.file)
+                    file_purposes[subtask.file] = subtask.purpose
+                  end
+                end
+              end
+              
+              M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+            end
+
+            ask_subtasks_approval = function(subtasks)
+              local prompt_msg = "¿Añadir " .. #subtasks .. " nuevas tareas? (Vacío=SI, No=Descartar, /q=Duda): "
+              
+              telegram.stop_background_monitor()
+
+              ui.log("\n### 💡 El Arquitecto Cloud sugiere añadir " .. #subtasks .. " nuevas tareas derivadas de este archivo:")
+              for _, st in ipairs(subtasks) do
+                ui.log("- **" .. (st.file or "Unknown") .. "**: " .. (st.purpose or ""))
+              end
+              ui.log("\n⏳ **¿Añadirlas a la cola de trabajo?** (Vacío=SI, No=Descartar, /q=Preguntar algo)\n")
+
+              local feedback_processed = false
+              telegram.poll_for_reply(function(reply)
+                if feedback_processed then return end
+                feedback_processed = true
+                process_subtasks_feedback(reply, true, subtasks)
+              end, function()
+                ui.log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
+                telegram.stop_polling()
+                if not feedback_processed then
+                   feedback_processed = true
+                   local esc = vim.api.nvim_replace_termcodes("<C-c>", true, false, true)
+                   vim.api.nvim_feedkeys(esc, "n", false)
+                end
+              end)
+
+              vim.ui.input({ prompt = prompt_msg }, function(feedback)
+                if feedback_processed then return end
+                feedback_processed = true
+                process_subtasks_feedback(feedback, false, subtasks)
+              end)
+            end
+
+            ask_human_approval()
           end)
         end)
         return
@@ -280,7 +381,7 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
         if utils.save_file_native(current_file, final_code) then
            ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
         end
-        callback("next_chunk")
+        callback("next_chunk", final_code, nil, suggested_subtasks)
       elseif score >= 80 then
         ui.log("### 🩹 [Arquitecto] Errores menores en " .. current_file .. " (Score: " .. score .. "). Delegando parche a Cloud Developer...")
         local patch_prompt = "You are a Developer. The code below has these minor issues:\n"
@@ -302,7 +403,7 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
           if utils.save_file_native(current_file, patched_code) then
              ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
           end
-          callback("next_chunk")
+          callback("next_chunk", patched_code, nil, suggested_subtasks)
         end)
       else
         local best_model = nil
@@ -322,7 +423,7 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
           ui.log("> 👑 El modelo **" .. best_model .. "** obtuvo el mejor puntaje de cooperación y liderará el parcheo.")
         end
 
-        callback("retry", fixes, best_model)
+        callback("retry", fixes, best_model, suggested_subtasks)
       end
     end
 
