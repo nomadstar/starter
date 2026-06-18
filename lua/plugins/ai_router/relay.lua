@@ -71,21 +71,74 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
       if model_idx > #local_models then
         -- Forward declare or call finish_relay
         M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, approved_context, comments, local_models, function(next_action, patch, best_model)
-          if next_action == "next_chunk" then
-            M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
-          elseif next_action == "retry" then
-            iter_count = iter_count + 1
-            if iter_count > max_iter then
-              ui.log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado para " .. current_file .. ". Aceptando tal como está.")
-              if utils.save_file_native(current_file, patch) then
-                 ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
+          vim.schedule(function()
+            vim.cmd("redraw")
+            local stop_beep = ui.start_attention_beeper()
+            local telegram = require("plugins.ai_router.telegram")
+            local feedback_processed = false
+
+            local function process_human_feedback(feedback, from_telegram)
+              if feedback_processed then return end
+              feedback_processed = true
+              stop_beep()
+              telegram.stop_polling()
+
+              if from_telegram then
+                vim.schedule(function()
+                  local esc = vim.api.nvim_replace_termcodes("<C-c>", true, false, true)
+                  vim.api.nvim_feedkeys(esc, "n", false)
+                end)
               end
-              M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
-            else
-              ui.log("\n---\n")
-              do_iteration(patch, current_code, best_model) -- patch contains the comments/fixes here
+
+              if feedback == false then return end -- Aborted locally
+
+              if feedback and feedback ~= "" then
+                ui.log("> 🧑‍💼 **[Director Humano]** Rechaza el archivo y exige: " .. feedback)
+                ui.log("\n---\n")
+                -- Treat human feedback as a retry constraint
+                iter_count = iter_count + 1
+                do_iteration(feedback, current_code, nil)
+              else
+                -- Human approved (Empty feedback)
+                if next_action == "next_chunk" then
+                  M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+                elseif next_action == "retry" then
+                  iter_count = iter_count + 1
+                  if iter_count > max_iter then
+                    ui.log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado para " .. current_file .. ". Aceptando tal como está.")
+                    if utils.save_file_native(current_file, patch) then
+                       ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
+                    end
+                    M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+                  else
+                    ui.log("\n---\n")
+                    do_iteration(patch, current_code, best_model)
+                  end
+                end
+              end
             end
-          end
+
+            local prompt_msg = "¿Aprobar " .. current_file .. "? (Vacío=SI, Texto=Feedback/Corregir): "
+            if next_action == "retry" then
+              prompt_msg = "Reescribir " .. current_file .. " (Vacío=Permitir Reescritura, Texto=Añadir feedback extra): "
+            end
+
+            telegram.poll_for_reply(function(reply)
+              process_human_feedback(reply, true)
+            end, function()
+              ui.log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
+              telegram.stop_polling()
+              if not feedback_processed then
+                 feedback_processed = true
+                 local esc = vim.api.nvim_replace_termcodes("<C-c>", true, false, true)
+                 vim.api.nvim_feedkeys(esc, "n", false)
+              end
+            end)
+
+            vim.ui.input({ prompt = prompt_msg }, function(feedback)
+              process_human_feedback(feedback, false)
+            end)
+          end)
         end)
         return
       end
