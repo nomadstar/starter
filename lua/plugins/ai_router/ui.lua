@@ -15,6 +15,9 @@ function M.create_floating_window()
     vim.api.nvim_buf_set_option(floating_buf, "bufhidden", "hide")
     vim.api.nvim_buf_set_option(floating_buf, "filetype", "markdown")
     vim.api.nvim_buf_set_keymap(floating_buf, "n", "q", "<cmd>hide<CR>", { noremap = true, silent = true })
+    
+    -- Apagar Treesitter para este buffer porque el streaming súper rápido lo crashea
+    pcall(function() vim.treesitter.stop(floating_buf) end)
   end
 
   local width = math.floor(vim.o.columns * 0.8)

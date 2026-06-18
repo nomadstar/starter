@@ -2,6 +2,29 @@ local M = {}
 local curl = require("plenary.curl")
 local utils = require("plugins.ai_router.utils")
 
+local last_update_id = 0
+local is_polling = false
+
+local last_msg_len = 0
+local function check_neovim_errors()
+  vim.schedule(function()
+    local ok, msgs = pcall(vim.fn.execute, "messages")
+    if not ok or type(msgs) ~= "string" then return end
+
+    if #msgs < last_msg_len then last_msg_len = 0 end
+
+    if #msgs > last_msg_len then
+      local new_msgs = msgs:sub(last_msg_len + 1)
+      last_msg_len = #msgs
+
+      if new_msgs:match("Error") or new_msgs:match("stack traceback:") or new_msgs:match("attempt to") then
+        local safe_msg = new_msgs:sub(1, 3500)
+        M.send_message("🔥 **[NVIM ERROR]**\n```text\n" .. safe_msg .. "\n```")
+      end
+    end
+  end)
+end
+
 function M.is_enabled()
   local token = utils.get_env("TELEGRAM_BOT_TOKEN")
   local chat_id = utils.get_env("TELEGRAM_CHAT_ID")
@@ -59,6 +82,7 @@ function M.poll_for_reply(callback, on_kill)
 
   local function do_poll()
     if not is_polling then return end
+    check_neovim_errors()
 
     curl.get(url .. "?offset=" .. (last_update_id + 1) .. "&timeout=10", {
       callback = function(res)
@@ -131,6 +155,8 @@ function M.start_background_monitor()
   
   local function do_bg_poll()
     if not bg_polling then return end
+    check_neovim_errors()
+    
     curl.get(url .. "?offset=" .. (last_update_id + 1) .. "&timeout=10", {
       callback = function(res)
         if not bg_polling then return end
