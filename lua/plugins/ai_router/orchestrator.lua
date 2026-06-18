@@ -149,7 +149,7 @@ local function call_ollama(model, prompt, callback)
       callback = function(res)
         if res.status ~= 200 then
           vim.schedule(function()
-            callback("ERROR Ollama: " .. res.status .. " " .. res.body)
+            callback("ERROR Ollama: " .. tostring(res.status) .. " " .. tostring(res.body))
           end)
           return
         end
@@ -564,13 +564,20 @@ function M.start_orchestration()
               ollama_prompt = ollama_prompt .. "\nOutput ONLY the raw code inside standard markdown blocks (```). Do not include any other text."
 
               call_ollama(current_model, ollama_prompt, function(code_response)
+                if code_response:match("^ERROR") then
+                  log("> ⚠️ **[Sistema]** Error (" .. code_response .. "). Saltando el modelo " .. current_model .. "...")
+                  model_idx = model_idx + 1
+                  run_next_model()
+                  return
+                end
                 current_code = code_response
                 model_idx = model_idx + 1
                 run_next_model()
               end)
             end
 
-            function finish_relay(final_code)
+            local function finish_relay(final_code)
+              final_code = final_code or ""
               log("> **[Ollama Local]** Cadena completada (" .. current_file .. "). Auto-evaluando...\n")
 
               local self_review_prompt = "You are an AI Self-Reviewer. Review the code you just generated for " .. current_file .. ".\n\nCODE:\n" .. final_code .. "\n\nIdentify any obvious bugs, missing implementations, or placeholders. You MUST reply with a raw JSON object: {\"score\": 100, \"fixes\": \"list of fixes or empty\"}. Score 90-100 if perfect, <90 if there are issues."
