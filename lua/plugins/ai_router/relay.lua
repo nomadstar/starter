@@ -127,6 +127,9 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
             
             telegram.stop_background_monitor()
 
+            ui.log("\n### 📝 Contenido Propuesto para `" .. current_file .. "`:\n```\n" .. patch .. "\n```\n")
+            ui.log("⏳ **Esperando decisión del Director Humano...** (Responde en Neovim o envía /approve en Telegram)\n")
+
             telegram.poll_for_reply(function(reply)
               process_human_feedback(reply, true)
             end, function()
