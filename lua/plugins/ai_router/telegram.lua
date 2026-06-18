@@ -26,6 +26,7 @@ function M.send_message(text)
       ["Content-Type"] = "application/json",
     },
     callback = function() end, -- Fire and forget
+    on_error = function(err) end, -- Ignore network errors silently
   })
 end
 
@@ -85,6 +86,11 @@ function M.poll_for_reply(callback, on_kill)
         if is_polling then
           vim.defer_fn(do_poll, 1000)
         end
+      end,
+      on_error = function(err)
+        if is_polling then
+          vim.defer_fn(do_poll, 2000) -- Reintentar tras un fallo de red
+        end
       end
     })
   end
@@ -133,6 +139,11 @@ function M.start_background_monitor()
           end
         end
         if bg_polling then vim.defer_fn(do_bg_poll, 1000) end
+      end,
+      on_error = function(err)
+        if bg_polling then
+          vim.defer_fn(do_bg_poll, 2000) -- Reintentar tras un fallo de red
+        end
       end
     })
   end
