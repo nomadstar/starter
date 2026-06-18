@@ -84,7 +84,8 @@ El Orquestador es la joya de la corona de este entorno. Es un flujo de trabajo m
 8. **Kill Switch Global (Botón de Pánico):** Si las IA alucinan o quieres abortar inmediatamente, puedes ejecutar el comando `:AiRouterKill` en Neovim o enviar `/kill` por Telegram en *cualquier momento* (incluso mientras el código se está generando). Esto cortará de tajo las conexiones de red y apagará el enjambre.
 9. **Despliegue Nativo Incremental:** Cada vez que un chunk es aprobado, se crea y guarda inmediatamente de forma nativa en tu disco duro (con Lua puro). ¡No tienes que esperar a que todo el proyecto termine para ver los resultados!
 10. **Memoria y Aislamiento:** El Arquitecto posee una "memoria a corto plazo" inyectada automáticamente que le recuerda qué archivos ya fueron construidos y aprobados, evitando repetición y pérdida de contexto.
-11. **Código Base 100% Modular:** Todo este motor (ubicado en `lua/plugins/ai_router/`) está segregado en módulos limpios: `api.lua` (Red), `ui.lua` (Buffers y Alertas), `relay.lua` (Motor Swarm), `utils.lua` (Helpers) y `orchestrator.lua` (Entrypoint principal). Esto permite extender funcionalidades sin romper el frágil ciclo asíncrono.
+11. **Anti-Hibernación (Sleep Lock):** Mientras el Orquestador está corriendo, Neovim usa `systemd-inhibit` para evitar que tu sistema operativo suspenda, duerma o hiberne la máquina. Esto evita que procesos de horas de duración se mueran a la mitad de la noche. *Este bloqueo es temporal, inofensivo y se libera automáticamente en cuanto el Orquestador termina o si lo matas con `/kill`.*
+12. **Código Base 100% Modular:** Todo este motor (ubicado en `lua/plugins/ai_router/`) está segregado en módulos limpios: `api.lua` (Red), `ui.lua` (Buffers y Alertas), `relay.lua` (Motor Swarm), `utils.lua` (Helpers) y `orchestrator.lua` (Entrypoint principal). Esto permite extender funcionalidades sin romper el frágil ciclo asíncrono.
 
 ## ⌨️ Comandos y Atajos (Keymaps)
 

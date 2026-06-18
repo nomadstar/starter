@@ -25,6 +25,9 @@ function M.start_orchestration()
     
     -- Reset kill switch
     _G.AI_ROUTER_KILLED = false
+    
+    -- Bloquear hibernación mientras dura la orquestación
+    utils.prevent_sleep()
 
     ui.log("# ORQUESTADOR MULTI-AGENTE INICIADO\n**Meta:** " .. user_prompt .. "\n")
     
@@ -124,6 +127,7 @@ function M.start_orchestration()
 
         if #files == 0 and not arch_response:match("^[Mm][Oo][Dd][Ee]:%s*[Ff][Aa][Ss][Tt]") then
           ui.log("> ⚠️ **[Sistema]** No se detectaron archivos [FILE] en el plan. Abortando. Revisa el log del Arquitecto.")
+          utils.allow_sleep()
           return
         end
 
@@ -131,6 +135,7 @@ function M.start_orchestration()
           telegram.start_background_monitor()
           relay.process_chunk(1, files, arch_response, file_purposes, final_prompt, function()
             telegram.stop_background_monitor()
+            utils.allow_sleep()
             ui.log("\n> 🎉 **[Orquestador] Tarea completamente finalizada.**")
           end)
         end

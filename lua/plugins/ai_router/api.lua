@@ -8,6 +8,7 @@ _G.AI_ROUTER_KILLED = false
 
 function M.kill_all()
   _G.AI_ROUTER_KILLED = true
+  utils.allow_sleep()
   for _, job in ipairs(_G.AI_ROUTER_ACTIVE_JOBS) do
     pcall(function() job:shutdown() end)
   end

@@ -114,4 +114,28 @@ function M.get_recent_file_contents(files, current_index, max_files)
   return context
 end
 
+local sleep_job = nil
+
+function M.prevent_sleep()
+  if sleep_job then return end
+  if vim.fn.executable("systemd-inhibit") == 1 then
+    local Job = require("plenary.job")
+    sleep_job = Job:new({
+      command = "systemd-inhibit",
+      args = { "--what=sleep:idle", "--why=AiRouter Orchestration", "sleep", "31536000" },
+      on_exit = function()
+        sleep_job = nil
+      end,
+    })
+    sleep_job:start()
+  end
+end
+
+function M.allow_sleep()
+  if sleep_job then
+    pcall(function() sleep_job:shutdown() end)
+    sleep_job = nil
+  end
+end
+
 return M
