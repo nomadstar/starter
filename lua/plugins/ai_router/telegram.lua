@@ -73,7 +73,9 @@ function M.poll_for_reply(callback, on_kill)
                 local msg_time = update.message.date or 0
                 if msg_time >= start_time - 5 then
                   local text = update.message.text
-                  if text == "/kill" then
+                  if text == "/status" then
+                    require("plugins.ai_router.utils").get_system_status(function(msg) M.send_message(msg) end)
+                  elseif text == "/kill" then
                     is_polling = false
                     if on_kill then
                       vim.schedule(function() on_kill() end)
@@ -145,6 +147,8 @@ function M.start_background_monitor()
                     require("plugins.ai_router.api").kill_all()
                     require("plugins.ai_router.ui").log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
                     return
+                  elseif update.message.text == "/status" then
+                    require("plugins.ai_router.utils").get_system_status(function(msg) M.send_message(msg) end)
                   end
                 end
               end

@@ -138,4 +138,35 @@ function M.allow_sleep()
   end
 end
 
+function M.get_system_status(callback)
+  local script = [[
+cpu_usage=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}')
+gpu_info=$(nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv,noheader 2>/dev/null || echo "No GPU")
+ollama_usage=$(ps aux | grep "[o]llama" | awk '{cpu+=$3; mem+=$4} END {print "CPU: "cpu"% RAM: "mem"%"}')
+echo "CPU Global: $cpu_usage%"
+echo "GPU: $gpu_info"
+echo "Ollama: $ollama_usage"
+  ]]
+  local Job = require("plenary.job")
+  Job:new({
+    command = "bash",
+    args = { "-c", script },
+    on_exit = function(j, return_val)
+      local result = table.concat(j:result(), "\n")
+      local orchestration_state = "Inactiva"
+      if _G.AI_ROUTER_ACTIVE_JOBS and #_G.AI_ROUTER_ACTIVE_JOBS > 0 then
+        orchestration_state = "Activa (" .. #_G.AI_ROUTER_ACTIVE_JOBS .. " jobs)"
+      end
+      
+      local status_msg = "📊 **Estado del Sistema:**\n\n"
+        .. result .. "\n"
+        .. "Orquestación: " .. orchestration_state
+      
+      vim.schedule(function()
+        callback(status_msg)
+      end)
+    end,
+  }):start()
+end
+
 return M
