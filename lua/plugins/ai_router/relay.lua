@@ -67,14 +67,14 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
       local_models = { force_model }
     end
 
+    local turn_count = 0
+    local no_change_count = 0
     local model_idx = 1
     local current_code = previous_code
 
-    local function run_next_model()
-      if model_idx > #local_models then
-        -- Forward declare or call finish_relay
-        M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, cloud_context, comments, local_models, function(next_action, patch, best_model, suggested_subtasks)
-          vim.schedule(function()
+    local function trigger_finish()
+      M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, cloud_context, comments, local_models, function(next_action, patch, best_model, suggested_subtasks)
+        vim.schedule(function()
             vim.cmd("redraw")
             local stop_beep = ui.start_attention_beeper()
             local telegram = require("plugins.ai_router.telegram")
@@ -254,28 +254,48 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
             ask_human_approval()
           end)
         end)
-        return
+    end
+
+    local function run_next_model()
+      if _G.AI_ROUTER_KILLED then return end
+
+      if model_idx > #local_models then
+         model_idx = 1
+      end
+
+      if turn_count > 0 and no_change_count >= #local_models then
+         ui.log("\n> 🤝 **[Consenso]** Los " .. #local_models .. " agentes locales están de acuerdo. Enviando al Arquitecto...")
+         trigger_finish()
+         return
+      end
+      if turn_count >= (max_iter * #local_models) then
+         ui.log("\n> ⚠️ **[Sistema]** Límite máximo de turnos de consenso alcanzado. Forzando revisión del Arquitecto.")
+         trigger_finish()
+         return
       end
 
       local current_model = local_models[model_idx]
-      ui.log("> **[Ollama Local (" .. current_model .. ")]** Iteración " .. iter_count .. "/" .. max_iter .. ". Paso " .. model_idx .. "/" .. #local_models .. "...\n")
+      ui.log("> **[Ollama Local (" .. current_model .. ")]** Turno " .. (turn_count + 1) .. ". Paso " .. model_idx .. "/" .. #local_models .. "...\n")
 
       local ollama_prompt
-      if iter_count == 1 and model_idx == 1 then
-        ollama_prompt = base_prompt
-      elseif iter_count > 1 and model_idx == 1 then
-        ollama_prompt = base_prompt .. "\n\n=================================\n\n"
-          .. "You are currently FIXING this file based on the Architect's feedback.\n"
-          .. "Here is your previously generated code:\n```\n"
-          .. (current_code or "")
-          .. "\n```\n\nFix the code based EXACTLY on these comments:\n"
-          .. (comments or "")
+      if turn_count == 0 and (current_code == nil or current_code == "") then
+        if iter_count == 1 then
+          ollama_prompt = base_prompt .. "\n\nCRITICAL INSTRUCTION: You are the FIRST developer. Write the COMPLETE implementation/document. Output ONLY the raw content inside standard markdown blocks (```). Do NOT use search/replace blocks for this first draft. Write the full text."
+        else
+          ollama_prompt = base_prompt .. "\n\n=================================\n\n"
+            .. "You are currently FIXING this file based on the Architect's feedback.\n"
+            .. "Fix the code based EXACTLY on these comments:\n" .. (comments or "")
+            .. "\nCRITICAL INSTRUCTION: You are the FIRST developer in this iteration. Write the COMPLETE implementation. Output ONLY the raw content inside standard markdown blocks (```)."
+        end
       else
         ollama_prompt = base_prompt .. "\n\n=================================\n\n"
-          .. "You are the NEXT developer in the relay. Refine and improve the draft from the previous developer.\n"
-          .. "PREVIOUS DRAFT:\n```\n"
-          .. (current_code or "")
-          .. "\n```\n\nImprove it while maintaining the original purpose."
+          .. "You are a reviewer in the swarm consensus loop. Please review the CURRENT DRAFT and improve it, expand it, or fix issues.\n"
+          .. "CURRENT DRAFT:\n```\n" .. (current_code or "") .. "\n```\n\n"
+          .. "CRITICAL INSTRUCTION: You MUST ONLY output SEARCH/REPLACE blocks. Do NOT output the full document.\n"
+          .. "If you think the draft is perfect and needs no changes, output ABSOLUTELY NOTHING. Just return an empty response.\n"
+          .. "Format for patches:\n"
+          .. "<<<<\n[exact original lines to replace]\n====\n[new improved lines]\n>>>>\n"
+          .. "Do NOT include any other text outside the blocks."
       end
 
       ollama_prompt = ollama_prompt .. "\nAdd a comment somewhere in the code (using appropriate comment syntax): `# Esto lo hizo " .. current_model .. "` to sign your work."
@@ -283,18 +303,47 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
       if vim.env.CAVEMAN_MODE == "true" and not is_docs_mode then
         ollama_prompt = ollama_prompt .. "\n\nCAVEMAN MODE: Output ONLY code. No chatter. Shortest possible fixes."
       end
-      local anti_lazy = "CRITICAL: You are an autonomous system. Do NOT use placeholders, comments like 'rest of code here', or summaries. You MUST write the ENTIRE implementation for ALL requested files. Skipping code will break the deployment."
-      ollama_prompt = ollama_prompt .. "\n" .. anti_lazy
-      ollama_prompt = ollama_prompt .. "\nOutput ONLY the raw code inside standard markdown blocks (```). Do not include any other text."
 
       api.call_ollama(current_model, ollama_prompt, function(code_response)
         if code_response:match("^ERROR") then
-          ui.log("> ⚠️ **[Sistema]** Error (" .. code_response .. "). Saltando el modelo " .. current_model .. "...")
+          ui.log("> ⚠️ **[Sistema]** Error (" .. code_response .. "). Saltando modelo...")
+          no_change_count = no_change_count + 1
+          turn_count = turn_count + 1
           model_idx = model_idx + 1
           run_next_model()
           return
         end
-        current_code = code_response
+
+        if turn_count == 0 and (current_code == nil or current_code == "") then
+          current_code = code_response:match("```[%w]*\n(.-)```") or code_response
+          if vim.trim(current_code) == "" then current_code = code_response end
+          no_change_count = 0
+        else
+          local changed = false
+          for search_block, replace_block in code_response:gmatch("<<<<(.-)====(.-)>>>>") do
+            local search = vim.trim(search_block)
+            local replace = vim.trim(replace_block)
+            if search ~= "" then
+              local start_idx, end_idx = current_code:find(search, 1, true)
+              if start_idx then
+                current_code = current_code:sub(1, start_idx - 1) .. replace .. current_code:sub(end_idx + 1)
+                changed = true
+              else
+                ui.log("\n> ⚠️ **[Sistema]** Falló un bloque de parche (texto original no encontrado).")
+              end
+            end
+          end
+
+          if changed then
+            no_change_count = 0
+            ui.log("\n> 🛠️ **[" .. current_model .. "]** Aplicó parches al documento.")
+          else
+            no_change_count = no_change_count + 1
+            ui.log("\n> 🤷 **[" .. current_model .. "]** No propuso cambios. (Consenso: " .. no_change_count .. "/" .. #local_models .. ")")
+          end
+        end
+
+        turn_count = turn_count + 1
         model_idx = model_idx + 1
         run_next_model()
       end)
