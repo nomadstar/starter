@@ -17,17 +17,30 @@ function M.send_message(text)
   -- Limpiar el markdown complejo que telegram no soporta bien
   local clean_text = text:gsub("```", ""):gsub("%*%(%*%", ""):gsub("%*%)%*%", "")
 
-  curl.post(url, {
-    body = vim.json.encode({
-      chat_id = chat_id,
-      text = clean_text,
-    }),
-    headers = {
-      ["Content-Type"] = "application/json",
-    },
-    callback = function() end, -- Fire and forget
-    on_error = function(err) end, -- Ignore network errors silently
-  })
+  local chunk_size = 4000
+  
+  local function send_chunk(start_idx)
+    if start_idx > #clean_text then return end
+    
+    local chunk = clean_text:sub(start_idx, start_idx + chunk_size - 1)
+    
+    curl.post(url, {
+      body = vim.json.encode({
+        chat_id = chat_id,
+        text = chunk,
+      }),
+      headers = {
+        ["Content-Type"] = "application/json",
+      },
+      callback = function()
+        -- Enviar recursivamente para mantener el orden de los mensajes
+        send_chunk(start_idx + chunk_size)
+      end,
+      on_error = function(err) end, -- Ignore network errors silently
+    })
+  end
+
+  send_chunk(1)
 end
 
 local is_polling = false
