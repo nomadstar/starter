@@ -75,12 +75,14 @@ The Orchestrator is the crown jewel of this environment. It's a fully asynchrono
    - **`MODE: DOCS`**: (Exclusive on explicit user request). Disables *Caveman Mode* and forces the generation of highly exhaustive encyclopedias and documentation without summarization.
 3. **Telegram Remote Control:** Monitor and command your AI squadron right from your smartphone. The system broadcasts live logs via Telegram and performs *Long Polling*. You can approve plans by sending `/approve`, provide feedback text, or stop a rogue AI by sending `/kill` 😈.
 4. **Infinite Context (Recursive Continuation):** Say goodbye to "truncated files". If Ollama runs out of output tokens, the orchestrator concatenates the generated text, silently re-prompts the model to "continue exactly where it left off", and loops this process invisibly until massive chapters are completed.
-5. **Self-Review (Defend Your Code) & JSON Triage:** The **Local Developer** (Ollama) writes the code and then must self-evaluate by sending a JSON defense to the Cloud Architect. The Architect assigns a strict final score (0-100).
+5. **Swarm Architecture (Local Models Relay):** If you define a comma-separated list in `AGENT_LOCAL_MODEL` (e.g. `llama3,qwen2.5-coder:14b`), the orchestrator will chain the local models. The first one creates a draft and signs it (`# Esto lo hizo llama3`), and the next one refines and improves it. A fully autonomous cascading teamwork.
+6. **Self-Review (Defend Your Code), Cooperation & JSON Triage:** The generated code chain is sent to the Cloud Architect to defend their work. The Architect not only evaluates the final code (Score 0-100), but also returns **Cooperation** metrics and individual scores for each participating model.
    - **Score >= 90:** Directly approved.
    - **Score 80-89:** Minor error. The Cloud Architect surgically patches the code on the fly.
-   - **Score < 80:** Major error. Ollama is forced to rewrite it completely with specific instructions.
-6. **Incremental Native Deployment:** Every time a chunk is approved, it is immediately built and saved to your hard drive natively using pure Lua. No need to wait for the entire project to finish to see results!
-7. **Memory & Context Isolation:** The Architect has an automatically injected "short-term memory" that reminds it which files have already been successfully built, preventing it from hallucinating or forgetting context.
+   - **Score < 80:** Major error. Ollama is forced to rewrite. **Dynamic Leadership:** The local model that obtained the highest cooperation score is appointed as the exclusive "Leader" to patch the problem in the next iteration.
+7. **Incremental Native Deployment:** Every time a chunk is approved, it is immediately built and saved to your hard drive natively using pure Lua. No need to wait for the entire project to finish to see results!
+8. **Memory & Context Isolation:** The Architect has an automatically injected "short-term memory" that reminds it which files have already been successfully built, preventing it from hallucinating or forgetting context.
+9. **100% Modular Codebase:** This entire engine (located in `lua/plugins/ai_router/`) is segregated into clean modules: `api.lua` (Network), `ui.lua` (Buffers and Alerts), `relay.lua` (Swarm Engine), `utils.lua` (Helpers) and `orchestrator.lua` (Main entrypoint). This allows extending features without breaking the fragile asynchronous cycle.
 
 ## ⌨️ Commands and Keymaps
 

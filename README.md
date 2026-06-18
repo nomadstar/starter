@@ -75,12 +75,14 @@ El Orquestador es la joya de la corona de este entorno. Es un flujo de trabajo m
    - **`MODE: DOCS`**: (Exclusivo si el usuario lo pide). Desactiva el *Modo Cavernícola* y obliga a escribir enciclopedias y documentación exhaustiva sin resúmenes.
 3. **Control Remoto Vía Telegram:** Monitorea y dirige todo el escuadrón desde tu teléfono móvil. El sistema envía logs en vivo por Telegram y hace *Long Polling*. Puedes aprobar planes escribiendo `/approve` en Telegram, dar feedback de correcciones, o detener una IA rebelde escribiendo `/kill` 😈.
 4. **Contexto Infinito (Continuación Recursiva):** Se acabaron los "archivos cortados por la mitad". Si Ollama se queda sin tokens de salida, el orquestador concatena lo generado, reinyecta el prompt pidiendo que continúe exactamente donde se quedó, y repite este ciclo en bucle invisible hasta que termina capítulos gigantes.
-5. **Autoevaluación (Defiende tu Código) y Triage JSON:** El **Desarrollador Local** (Ollama) escribe el código y luego debe auto-evaluarse mandando un JSON al Arquitecto de la Nube para defender su trabajo. El Arquitecto impone el puntaje final estricto (Score 0-100).
+5. **Arquitectura Swarm (Relevos de Modelos Locales):** Si defines una lista separada por comas en `AGENT_LOCAL_MODEL` (ej: `llama3,qwen2.5-coder:14b`), el orquestador encadenará a los modelos locales. El primero crea un borrador y lo firma (`# Esto lo hizo llama3`), y el siguiente lo refina y lo mejora. Un trabajo de equipo en cascada totalmente autónomo.
+6. **Autoevaluación (Defiende tu Código), Cooperación y Triage JSON:** La cadena de código generada se envía al Arquitecto de la Nube para defender su trabajo. El Arquitecto no solo evalúa el código final (Score 0-100), sino que devuelve métricas de **Cooperación** y puntajes individuales para cada modelo participante.
    - **Score >= 90:** Aprobado directamente.
    - **Score 80-89:** Error menor. El Arquitecto de la nube lo parchea quirúrgicamente.
-   - **Score < 80:** Error grave. Se fuerza a Ollama a reescribir con instrucciones específicas.
-6. **Despliegue Nativo Incremental:** Cada vez que un chunk es aprobado, se crea y guarda inmediatamente de forma nativa en tu disco duro (con Lua puro). ¡No tienes que esperar a que todo el proyecto termine para ver los resultados!
-7. **Memoria y Aislamiento:** El Arquitecto posee una "memoria a corto plazo" inyectada automáticamente que le recuerda qué archivos ya fueron construidos y aprobados, evitando repetición y pérdida de contexto.
+   - **Score < 80:** Error grave. Se fuerza a Ollama a reescribir. **Liderazgo Dinámico:** El modelo local que obtuvo el mayor puntaje de cooperación es designado como "Líder" exclusivo para parchear el problema en la siguiente iteración.
+7. **Despliegue Nativo Incremental:** Cada vez que un chunk es aprobado, se crea y guarda inmediatamente de forma nativa en tu disco duro (con Lua puro). ¡No tienes que esperar a que todo el proyecto termine para ver los resultados!
+8. **Memoria y Aislamiento:** El Arquitecto posee una "memoria a corto plazo" inyectada automáticamente que le recuerda qué archivos ya fueron construidos y aprobados, evitando repetición y pérdida de contexto.
+9. **Código Base 100% Modular:** Todo este motor (ubicado en `lua/plugins/ai_router/`) está segregado en módulos limpios: `api.lua` (Red), `ui.lua` (Buffers y Alertas), `relay.lua` (Motor Swarm), `utils.lua` (Helpers) y `orchestrator.lua` (Entrypoint principal). Esto permite extender funcionalidades sin romper el frágil ciclo asíncrono.
 
 ## ⌨️ Comandos y Atajos (Keymaps)
 
