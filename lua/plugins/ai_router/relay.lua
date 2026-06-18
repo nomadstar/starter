@@ -77,7 +77,10 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
             local telegram = require("plugins.ai_router.telegram")
             local code_logged = false
 
-            local process_human_feedback, ask_human_approval, process_subtasks_feedback, ask_subtasks_approval
+            local process_human_feedback
+            local ask_human_approval
+            local process_subtasks_feedback
+            local ask_subtasks_approval
 
             process_human_feedback = function(feedback, from_telegram)
               stop_beep()
@@ -144,7 +147,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
               telegram.stop_background_monitor()
 
               if not code_logged then
-                ui.log("\n### 📝 Contenido Propuesto para `" .. current_file .. "`:\n```\n" .. patch .. "\n```\n")
+                ui.log("\n### 📝 Contenido Propuesto para `" .. current_file .. "`:\n```\n" .. (patch or "") .. "\n```\n")
                 code_logged = true
               end
               ui.log("⏳ **Esperando decisión del Director Humano...** (Responde en Neovim o envía /approve en Telegram)\n")
