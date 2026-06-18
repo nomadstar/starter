@@ -106,9 +106,17 @@ local function call_cloud(prompt, callback)
   try_model(1)
 end
 
-local function call_ollama(prompt, callback)
+local function get_local_models()
+  local local_models_str = get_env("AGENT_LOCAL_MODEL", "llama3")
+  local local_models = vim.split(local_models_str, ",")
+  for i, m in ipairs(local_models) do
+    local_models[i] = vim.trim(m)
+  end
+  return local_models
+end
+
+local function call_ollama(model, prompt, callback)
   local url = get_env("OLLAMA_HOST", "http://localhost:11434") .. "/api/chat"
-  local model = get_env("AGENT_LOCAL_MODEL", "llama3")
 
   local system_prompt = "You are an Expert Senior Developer. Your task is to write exhaustive, production-grade, and deeply detailed code/documentation."
   local anti_lazy = "CRITICAL: You are an autonomous system. Do NOT use placeholders, comments like 'rest of code here', or summaries. You MUST write the ENTIRE implementation for ALL requested files. Skipping code will break the deployment."
@@ -510,46 +518,68 @@ function M.start_orchestration()
             base_prompt = "You are an Expert Developer implementing exactly ONE file.\n"
               .. "FILE: " .. current_file .. "\n"
               .. "PURPOSE: " .. current_purpose .. "\n\n"
-              .. "Overall Project Goal: " .. final_prompt .. "\n\n"
-              .. "CRITICAL INSTRUCTIONS:\n"
-              .. "- If this is a documentation file or chapter, write EXTENSIVELY. Cover all edge cases, explain deeply, and be highly comprehensive. Do not summarize.\n"
-              .. "- If this is a code file, write the complete, robust, production-ready code with exhaustive comments.\n"
-              .. "- NEVER output a 'bare minimum' or 'skeleton' version. Your output MUST be final and thoroughly detailed.\n"
-              .. approved_context
-          end
-
-          local function do_iteration(comments, previous_code)
-            log("> **[Ollama Local (Turboquant)]** Iteración " .. iter_count .. "/" .. max_iter .. ". Escribiendo código...\n")
-
-            local ollama_prompt
-            if iter_count == 1 then
-              ollama_prompt = base_prompt
-            else
-              ollama_prompt = base_prompt .. "\n\n=================================\n\n"
-                .. "You are currently FIXING this file based on the Architect's feedback.\n"
-                .. "Here is your previously generated code:\n```\n"
-                .. previous_code
-                .. "\n```\n\nFix the code based EXACTLY on these comments:\n"
-                .. comments
+          local function do_iteration(comments, previous_code, force_model)
+            local local_models = get_local_models()
+            if force_model then
+              local_models = { force_model }
             end
 
-            if vim.env.CAVEMAN_MODE == "true" and not is_docs_mode then
-              ollama_prompt = ollama_prompt .. "\n\nCAVEMAN MODE: Output ONLY code. No chatter. Shortest possible fixes."
+            local model_idx = 1
+            local current_code = previous_code
+
+            local function run_next_model()
+              if model_idx > #local_models then
+                finish_relay(current_code)
+                return
+              end
+
+              local current_model = local_models[model_idx]
+              log("> **[Ollama Local (" .. current_model .. ")]** Iteración " .. iter_count .. "/" .. max_iter .. ". Paso " .. model_idx .. "/" .. #local_models .. "...\n")
+
+              local ollama_prompt
+              if iter_count == 1 and model_idx == 1 then
+                ollama_prompt = base_prompt
+              elseif iter_count > 1 and model_idx == 1 then
+                ollama_prompt = base_prompt .. "\n\n=================================\n\n"
+                  .. "You are currently FIXING this file based on the Architect's feedback.\n"
+                  .. "Here is your previously generated code:\n```\n"
+                  .. (current_code or "")
+                  .. "\n```\n\nFix the code based EXACTLY on these comments:\n"
+                  .. (comments or "")
+              else
+                ollama_prompt = base_prompt .. "\n\n=================================\n\n"
+                  .. "You are the NEXT developer in the relay. Refine and improve the draft from the previous developer.\n"
+                  .. "PREVIOUS DRAFT:\n```\n"
+                  .. (current_code or "")
+                  .. "\n```\n\nImprove it while maintaining the original purpose."
+              end
+
+              ollama_prompt = ollama_prompt .. "\nAdd a comment somewhere in the code (using appropriate comment syntax): `# Esto lo hizo " .. current_model .. "` to sign your work."
+
+              if vim.env.CAVEMAN_MODE == "true" and not is_docs_mode then
+                ollama_prompt = ollama_prompt .. "\n\nCAVEMAN MODE: Output ONLY code. No chatter. Shortest possible fixes."
+              end
+              local anti_lazy = "CRITICAL: You are an autonomous system. Do NOT use placeholders, comments like 'rest of code here', or summaries. You MUST write the ENTIRE implementation for ALL requested files. Skipping code will break the deployment."
+              ollama_prompt = ollama_prompt .. "\n" .. anti_lazy
+              ollama_prompt = ollama_prompt .. "\nOutput ONLY the raw code inside standard markdown blocks (```). Do not include any other text."
+
+              call_ollama(current_model, ollama_prompt, function(code_response)
+                current_code = code_response
+                model_idx = model_idx + 1
+                run_next_model()
+              end)
             end
-            local anti_lazy = "CRITICAL: You are an autonomous system. Do NOT use placeholders, comments like 'rest of code here', or summaries. You MUST write the ENTIRE implementation for ALL requested files. Skipping code will break the deployment."
-            ollama_prompt = ollama_prompt .. "\n" .. anti_lazy
-            ollama_prompt = ollama_prompt .. "\nOutput ONLY the raw code inside standard markdown blocks (```). Do not include any other text."
 
-            call_ollama(ollama_prompt, function(code_response)
-              log("> **[Ollama Local]** Código completado (" .. current_file .. "). Auto-evaluando (El estudiante defiende su código)...\n")
+            function finish_relay(final_code)
+              log("> **[Ollama Local]** Cadena completada (" .. current_file .. "). Auto-evaluando...\n")
 
-              local self_review_prompt = "You are an AI Self-Reviewer. Review the code you just generated for " .. current_file .. ".\n\nCODE:\n" .. code_response .. "\n\nIdentify any obvious bugs, missing implementations, or placeholders. You MUST reply with a raw JSON object: {\"score\": 100, \"fixes\": \"list of fixes or empty\"}. Score 90-100 if perfect, <90 if there are issues."
+              local self_review_prompt = "You are an AI Self-Reviewer. Review the code you just generated for " .. current_file .. ".\n\nCODE:\n" .. final_code .. "\n\nIdentify any obvious bugs, missing implementations, or placeholders. You MUST reply with a raw JSON object: {\"score\": 100, \"fixes\": \"list of fixes or empty\"}. Score 90-100 if perfect, <90 if there are issues."
               
               if vim.env.CAVEMAN_MODE == "true" then
                 self_review_prompt = self_review_prompt .. "\nCAVEMAN MODE: Output ONLY the raw JSON object."
               end
 
-              call_ollama(self_review_prompt, function(self_review_response)
+              call_ollama(local_models[#local_models], self_review_prompt, function(self_review_response)
                 local self_json_str = self_review_response:match("{.*}") or self_review_response
                 local ok, data = pcall(vim.json.decode, self_json_str)
                 local self_fixes = ""
@@ -561,123 +591,153 @@ function M.start_orchestration()
                 log("> **[Ollama Auto-Review]** Evaluado localmente. Enviando defensa al Arquitecto Cloud para veredicto final...\n")
 
                 local review_prompt
-                local line_count = select(2, code_response:gsub('\n', '\n')) + 1
+                local line_count = select(2, final_code:gsub('\n', '\n')) + 1
                 if iter_count == 1 then
                   review_prompt = "You are the Architect. The Developer generated code for "
                     .. current_file .. " (Length: " .. line_count .. " lines).\n\n"
                     .. "The Developer's self-review (defense) noted these issues:\n" .. self_fixes .. "\n\n"
                     .. "Review the code against the overall purpose: " .. (file_purposes[current_file] or "General") .. "\n\nCODE:\n"
-                    .. code_response
+                    .. final_code
                     .. approved_context
-                    .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": [\"list of fixes if any\"]\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80. IMPORTANT: The score MUST be a NUMERIC INTEGER (e.g. 85), NEVER a word like 'eighty'."
                 else
                   review_prompt = "You are the Architect. You previously requested these fixes for "
                     .. current_file
                     .. ":\n"
-                    .. comments
+                    .. (comments or "")
                     .. "\n\nReview the updated code:\n\nCODE:\n"
-                    .. code_response
+                    .. final_code
                     .. approved_context
-                    .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": [\"list of fixes if any\"]\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80. IMPORTANT: The score MUST be a NUMERIC INTEGER (e.g. 85), NEVER a word like 'eighty'."
                 end
+
+                review_prompt = review_prompt .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": [\"list of fixes if any\"],\n  \"cooperation_notes\": \"notas breves sobre como colaboraron los modelos locales\",\n  \"cooperation_scores\": \"modelA=80, modelB=90\"\n}\nIf the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80. IMPORTANT: The score MUST be a NUMERIC INTEGER."
 
                 if vim.env.CAVEMAN_MODE == "true" then
                   review_prompt = review_prompt .. "\n\nCAVEMAN MODE: Output ONLY the raw JSON object. No markdown formatting, no explanations."
                 end
 
                 local function handle_review(review_response)
-                local json_str = review_response:match("{.*}") or review_response
-                local ok, data = pcall(vim.json.decode, json_str)
+                  local json_str = review_response:match("{.*}") or review_response
+                  local ok2, data2 = pcall(vim.json.decode, json_str)
 
-                local score = 0
-                local fixes = review_response
-                if ok and type(data) == "table" then
-                  score = tonumber(data.score) or 0
-                  fixes = data.fixes or "Unknown error"
-                  if type(fixes) == "table" then
-                    fixes = vim.json.encode(fixes)
-                  elseif type(fixes) ~= "string" then
-                    fixes = tostring(fixes)
-                  end
-                else
-                  log("\n> ⚠️ **[Sistema]** Falló el parseo JSON del Revisor. Asumiendo score 0.")
-                end
-
-                if score >= 90 then
-                  log("### ✅ [Arquitecto] Archivo `" .. current_file .. "` APROBADO (Score: " .. score .. ") en iteración " .. iter_count .. "!")
-                  if save_file_native(current_file, code_response) then
-                     log("### 💾 Guardado en disco: `" .. current_file .. "`")
-                  end
-                  all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. code_response
-                  process_chunk(chunk_index + 1)
-                elseif score >= 80 then
-                  log("### 🩹 [Arquitecto] Errores menores en " .. current_file .. " (Score: " .. score .. "). Delegando parche a Cloud Developer...")
-                  local patch_prompt = "You are a Developer. The code below has these minor issues:\n"
-                    .. fixes
-                    .. "\n\nCODE:\n"
-                    .. code_response
-                    .. "\n\nFix the code. Return the fixed code inside a markdown block. BEFORE the code block, briefly list the exact changes you made (verbose log)."
-
-                  call_cloud(patch_prompt, function(patch_response)
-                    if patch_response:match("^ERROR") then
-                      log("\n> ⚠️ **[Sistema]** Falló el parche en la nube. Forzando iteración local...")
-                      iter_count = iter_count + 1
-                      if iter_count > max_iter then
-                        log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado para " .. current_file .. ". Aceptando tal como está.")
-                        if save_file_native(current_file, code_response) then
-                           log("### 💾 Guardado en disco: `" .. current_file .. "`")
-                        end
-                        all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. code_response
-                        process_chunk(chunk_index + 1)
-                      else
-                        do_iteration(fixes, code_response)
-                      end
-                      return
+                  local score = 0
+                  local fixes = review_response
+                  local coop_notes = ""
+                  local coop_scores = ""
+                  if ok2 and type(data2) == "table" then
+                    score = tonumber(data2.score) or 0
+                    fixes = data2.fixes or "Unknown error"
+                    coop_notes = data2.cooperation_notes or ""
+                    coop_scores = data2.cooperation_scores or ""
+                    if type(fixes) == "table" then
+                      fixes = vim.json.encode(fixes)
+                    elseif type(fixes) ~= "string" then
+                      fixes = tostring(fixes)
                     end
-
-                    log("\n> ☁️ **[Cloud Developer]** Cambios aplicados en `" .. current_file .. "`:\n" .. patch_response)
-                    local patched_code = patch_response:match("```[%w]*\n(.-)```") or patch_response
-                    log("\n### ✅ [Sistema] Archivo `" .. current_file .. "` APROBADO vía parche Cloud!")
-                    if save_file_native(current_file, patched_code) then
-                       log("### 💾 Guardado en disco: `" .. current_file .. "`")
-                    end
-                    all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. patched_code
-                    process_chunk(chunk_index + 1)
-                  end)
-                else
-                  log("### ❌ [Arquitecto] Revisión fallida para " .. current_file .. " (Score: " .. score .. "). Comentarios:\n" .. fixes)
-                  iter_count = iter_count + 1
-                  if iter_count > max_iter then
-                    log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado para " .. current_file .. ". Aceptando tal como está.")
-                    if save_file_native(current_file, code_response) then
-                       log("### 💾 Guardado en disco: `" .. current_file .. "`")
-                    end
-                    all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. code_response
-                    process_chunk(chunk_index + 1)
                   else
-                    log("\n---\n")
-                    do_iteration(fixes, code_response)
+                    log("\n> ⚠️ **[Sistema]** Falló el parseo JSON del Revisor. Asumiendo score 0.")
+                  end
+
+                  if coop_notes ~= "" then
+                    log("> 🤝 **[Cooperación]** Notas: " .. coop_notes)
+                  end
+                  if coop_scores ~= "" then
+                    log("> 📊 **[Cooperación]** Puntajes: " .. coop_scores)
+                  end
+
+                  if score >= 90 then
+                    log("### ✅ [Arquitecto] Archivo `" .. current_file .. "` APROBADO (Score: " .. score .. ") en iteración " .. iter_count .. "!")
+                    if save_file_native(current_file, final_code) then
+                       log("### 💾 Guardado en disco: `" .. current_file .. "`")
+                    end
+                    all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. final_code
+                    process_chunk(chunk_index + 1)
+                  elseif score >= 80 then
+                    log("### 🩹 [Arquitecto] Errores menores en " .. current_file .. " (Score: " .. score .. "). Delegando parche a Cloud Developer...")
+                    local patch_prompt = "You are a Developer. The code below has these minor issues:\n"
+                      .. fixes
+                      .. "\n\nCODE:\n"
+                      .. final_code
+                      .. "\n\nFix the code. Return the fixed code inside a markdown block. BEFORE the code block, briefly list the exact changes you made (verbose log)."
+
+                    call_cloud(patch_prompt, function(patch_response)
+                      if patch_response:match("^ERROR") then
+                        log("\n> ⚠️ **[Sistema]** Falló el parche en la nube. Forzando iteración local...")
+                        iter_count = iter_count + 1
+                        if iter_count > max_iter then
+                          log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado para " .. current_file .. ". Aceptando tal como está.")
+                          if save_file_native(current_file, final_code) then
+                             log("### 💾 Guardado en disco: `" .. current_file .. "`")
+                          end
+                          all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. final_code
+                          process_chunk(chunk_index + 1)
+                        else
+                          do_iteration(fixes, final_code)
+                        end
+                        return
+                      end
+
+                      log("\n> ☁️ **[Cloud Developer]** Cambios aplicados en `" .. current_file .. "`:\n" .. patch_response)
+                      local patched_code = patch_response:match("```[%w]*\n(.-)```") or patch_response
+                      log("\n### ✅ [Sistema] Archivo `" .. current_file .. "` APROBADO vía parche Cloud!")
+                      if save_file_native(current_file, patched_code) then
+                         log("### 💾 Guardado en disco: `" .. current_file .. "`")
+                      end
+                      all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. patched_code
+                      process_chunk(chunk_index + 1)
+                    end)
+                  else
+                    local best_model = nil
+                    if coop_scores ~= "" then
+                      local max_coop = -1
+                      for m, s in coop_scores:gmatch("([%w%-_]+)%s*=%s*(%d+)") do
+                        local iscore = tonumber(s)
+                        if iscore and iscore > max_coop then
+                          max_coop = iscore
+                          best_model = m
+                        end
+                      end
+                    end
+                    
+                    log("### ❌ [Arquitecto] Revisión fallida para " .. current_file .. " (Score: " .. score .. "). Comentarios:\n" .. fixes)
+                    if best_model then
+                      log("> 👑 El modelo **" .. best_model .. "** obtuvo el mejor puntaje de cooperación y liderará el parcheo.")
+                    end
+
+                    iter_count = iter_count + 1
+                    if iter_count > max_iter then
+                      log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado para " .. current_file .. ". Aceptando tal como está.")
+                      if save_file_native(current_file, final_code) then
+                         log("### 💾 Guardado en disco: `" .. current_file .. "`")
+                      end
+                      all_generated_code = all_generated_code .. "\n\n### FILE: " .. current_file .. "\n" .. final_code
+                      process_chunk(chunk_index + 1)
+                    else
+                      log("\n---\n")
+                      do_iteration(fixes, final_code, best_model)
+                    end
                   end
                 end
-              end
 
-              call_cloud(review_prompt, function(review_response)
-                if review_response:match("^ERROR") then
-                  log(review_response)
-                  log("\n> ⚠️ **[Sistema]** Falló el Revisor Cloud. Fallback a Ollama...\n")
-                  call_ollama(review_prompt, function(fallback_review)
-                    if fallback_review:match("^ERROR") then
-                      log(fallback_review)
-                      return
-                    end
-                    handle_review(fallback_review)
-                  end)
-                  return
-                end
-                handle_review(review_response)
+                call_cloud(review_prompt, function(review_response)
+                  if review_response:match("^ERROR") then
+                    log(review_response)
+                    log("\n> ⚠️ **[Sistema]** Falló el Revisor Cloud. Fallback a Ollama...\n")
+                    call_ollama(get_local_models()[1], review_prompt, function(fallback_review)
+                      if fallback_review:match("^ERROR") then
+                        log(fallback_review)
+                        return
+                      end
+                      handle_review(fallback_review)
+                    end)
+                    return
+                  end
+                  handle_review(review_response)
+                end)
               end)
-              end)
-            end)
+            end
+
+            run_next_model()
+          end
           end
 
           do_iteration(nil, nil)
@@ -729,7 +789,7 @@ function M.start_orchestration()
                 if revised_response:match("^ERROR") then
                   log(revised_response)
                   log("\n> ⚠️ **[Sistema]** Falló el Arquitecto Cloud en la revisión. Fallback a Ollama...\n")
-                  call_ollama(revision_prompt, function(fallback_rev)
+                  call_ollama(get_local_models()[1], revision_prompt, function(fallback_rev)
                     if fallback_rev:match("^ERROR") then
                       log(fallback_rev)
                       return
@@ -777,7 +837,7 @@ function M.start_orchestration()
         if arch_response:match("^ERROR") then
           log(arch_response)
           log("\n> ⚠️ **[Sistema]** Falló el Arquitecto Cloud. Fallback a Ollama...\n")
-          call_ollama(architecture_prompt, function(fallback_arch)
+          call_ollama(get_local_models()[1], architecture_prompt, function(fallback_arch)
             if fallback_arch:match("^ERROR") then
               log(fallback_arch)
               return
