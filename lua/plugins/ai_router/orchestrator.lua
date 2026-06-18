@@ -16,14 +16,34 @@ function M.start_orchestration()
 
     ui.log("# ORQUESTADOR MULTI-AGENTE INICIADO\n**Meta:** " .. user_prompt .. "\n")
     
-    local function process_urls_and_continue(prompt, on_fetch_done)
+      local function process_urls_and_continue(prompt, on_fetch_done)
       local urls = {}
       for url in prompt:gmatch("https?://[%w-_%.%?%.:/%+=&]+") do
         table.insert(urls, url)
       end
+      
+      local local_paths = {}
+      for path in prompt:gmatch("@([%w-_%.%?%.:/%+~\\]+)") do
+        table.insert(local_paths, path)
+      end
+
+      local current_prompt = prompt
+
+      if #local_paths > 0 then
+        ui.log("> 📂 **[Sistema]** Detectados " .. #local_paths .. " paths locales. Inyectando contexto...")
+        for _, path in ipairs(local_paths) do
+          local context = utils.read_local_context(path)
+          if context == "" then
+             ui.log("> ❌ **[Sistema]** Falló al leer el archivo o carpeta: " .. path)
+          else
+             ui.log("> 🟢 Archivo inyectado: " .. path)
+             current_prompt = current_prompt .. context
+          end
+        end
+      end
 
       if #urls == 0 then
-        on_fetch_done(prompt)
+        on_fetch_done(current_prompt)
         return
       end
 
