@@ -3,6 +3,17 @@ local curl = require("plenary.curl")
 local utils = require("plugins.ai_router.utils")
 local metrics = require("plugins.ai_router.metrics")
 
+_G.AI_ROUTER_ACTIVE_JOBS = _G.AI_ROUTER_ACTIVE_JOBS or {}
+_G.AI_ROUTER_KILLED = false
+
+function M.kill_all()
+  _G.AI_ROUTER_KILLED = true
+  for _, job in ipairs(_G.AI_ROUTER_ACTIVE_JOBS) do
+    pcall(function() job:shutdown() end)
+  end
+  _G.AI_ROUTER_ACTIVE_JOBS = {}
+end
+
 function M.call_cloud(prompt, callback)
   local url = utils.get_env("AGENT_CLOUD_URL", "https://openrouter.ai/api/v1/chat/completions")
   local key = utils.get_env("OPENROUTER_API_KEY", "")
@@ -39,7 +50,9 @@ function M.call_cloud(prompt, callback)
       max_tokens = tonumber(utils.get_env("AGENT_MAX_OUTPUT_TOKENS", "4096")),
     })
 
-    curl.post(url, {
+    if _G.AI_ROUTER_KILLED then return callback("ERROR: Killed") end
+
+    local job = curl.post(url, {
       body = body,
       headers = {
         ["Content-Type"] = "application/json",
@@ -90,6 +103,7 @@ function M.call_cloud(prompt, callback)
         end)
       end,
     })
+    table.insert(_G.AI_ROUTER_ACTIVE_JOBS, job)
   end
 
   try_model(1)
@@ -123,7 +137,9 @@ function M.call_ollama(model, prompt, callback)
       },
     })
 
-    curl.post(url, {
+    if _G.AI_ROUTER_KILLED then return callback("ERROR: Killed") end
+
+    local job = curl.post(url, {
       body = body,
       headers = { ["Content-Type"] = "application/json" },
       callback = function(res)
@@ -156,6 +172,7 @@ function M.call_ollama(model, prompt, callback)
         end
       end,
     })
+    table.insert(_G.AI_ROUTER_ACTIVE_JOBS, job)
   end
 
   send_request()

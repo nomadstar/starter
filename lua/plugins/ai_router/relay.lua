@@ -97,6 +97,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
                 ui.log("\n---\n")
                 -- Treat human feedback as a retry constraint
                 iter_count = iter_count + 1
+                telegram.start_background_monitor()
                 do_iteration(feedback, current_code, nil)
               else
                 -- Human approved (Empty feedback)
@@ -112,6 +113,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
                     M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
                   else
                     ui.log("\n---\n")
+                    telegram.start_background_monitor()
                     do_iteration(patch, current_code, best_model)
                   end
                 end
@@ -122,6 +124,8 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
             if next_action == "retry" then
               prompt_msg = "Reescribir " .. current_file .. " (Vacío=Permitir Reescritura, Texto=Añadir feedback extra): "
             end
+            
+            telegram.stop_background_monitor()
 
             telegram.poll_for_reply(function(reply)
               process_human_feedback(reply, true)

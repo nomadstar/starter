@@ -68,7 +68,7 @@ Basado en el principio de *"por qué usar muchas palabras si pocas funcionan"*. 
 
 El Orquestador es la joya de la corona de este entorno. Es un flujo de trabajo maestro-esclavo asíncrono y ultra-avanzado donde tú actúas como el Director.
 
-1. **Inyección de Contexto, Carpetas y Web:** Al pedir la tarea, puedes inyectar archivos o carpetas enteras escribiendo `@ruta/al/archivo/` (¡soporta `<Tab>` para autocompletar!). También puedes pegar URLs (ej. `https://docs.rs/serde`) y el sistema descargará la web en Markdown limpio usando *Jina Reader*.
+1. **Inyección de Contexto (Recursivo) y Web:** Al pedir la tarea, puedes inyectar archivos o carpetas enteras escribiendo `@ruta/al/archivo/`. Si pasas una carpeta, el orquestador leerá todos los archivos recursivamente (ignorando basura como `.git`, `node_modules`, `target` e imágenes automáticamente). También puedes pegar URLs (ej. `https://docs.rs/serde`) y descargará la web en Markdown limpio.
 2. **Arquitectura y Modos Especiales:** El **Arquitecto Cloud** diseña el plan técnico y divide el trabajo en archivos (Chunks) pidiéndote *Feedback*. Posee modos inteligentes:
    - **`MODE: PLAN`**: Tareas complejas y de código fuente.
    - **`MODE: FAST`**: Tareas triviales (< 50 líneas) directas a código.
@@ -80,9 +80,11 @@ El Orquestador es la joya de la corona de este entorno. Es un flujo de trabajo m
    - **Score >= 90:** Aprobado directamente.
    - **Score 80-89:** Error menor. El Arquitecto de la nube lo parchea quirúrgicamente.
    - **Score < 80:** Error grave. Se fuerza a Ollama a reescribir. **Liderazgo Dinámico:** El modelo local que obtuvo el mayor puntaje de cooperación es designado como "Líder" exclusivo para parchear el problema en la siguiente iteración.
-7. **Despliegue Nativo Incremental:** Cada vez que un chunk es aprobado, se crea y guarda inmediatamente de forma nativa en tu disco duro (con Lua puro). ¡No tienes que esperar a que todo el proyecto termine para ver los resultados!
-8. **Memoria y Aislamiento:** El Arquitecto posee una "memoria a corto plazo" inyectada automáticamente que le recuerda qué archivos ya fueron construidos y aprobados, evitando repetición y pérdida de contexto.
-9. **Código Base 100% Modular:** Todo este motor (ubicado en `lua/plugins/ai_router/`) está segregado en módulos limpios: `api.lua` (Red), `ui.lua` (Buffers y Alertas), `relay.lua` (Motor Swarm), `utils.lua` (Helpers) y `orchestrator.lua` (Entrypoint principal). Esto permite extender funcionalidades sin romper el frágil ciclo asíncrono.
+7. **Director Humano (Human-in-the-Loop):** Incluso si el Arquitecto Cloud aprueba el archivo, el sistema se pausa y te pregunta a ti. Puedes aprobarlo (Enter) o rechazarlo enviando tu propio feedback para obligar a los modelos locales a dar otra iteración. ¡Tú tienes la última palabra en cada archivo!
+8. **Kill Switch Global (Botón de Pánico):** Si las IA alucinan o quieres abortar inmediatamente, puedes ejecutar el comando `:AiRouterKill` en Neovim o enviar `/kill` por Telegram en *cualquier momento* (incluso mientras el código se está generando). Esto cortará de tajo las conexiones de red y apagará el enjambre.
+9. **Despliegue Nativo Incremental:** Cada vez que un chunk es aprobado, se crea y guarda inmediatamente de forma nativa en tu disco duro (con Lua puro). ¡No tienes que esperar a que todo el proyecto termine para ver los resultados!
+10. **Memoria y Aislamiento:** El Arquitecto posee una "memoria a corto plazo" inyectada automáticamente que le recuerda qué archivos ya fueron construidos y aprobados, evitando repetición y pérdida de contexto.
+11. **Código Base 100% Modular:** Todo este motor (ubicado en `lua/plugins/ai_router/`) está segregado en módulos limpios: `api.lua` (Red), `ui.lua` (Buffers y Alertas), `relay.lua` (Motor Swarm), `utils.lua` (Helpers) y `orchestrator.lua` (Entrypoint principal). Esto permite extender funcionalidades sin romper el frágil ciclo asíncrono.
 
 ## ⌨️ Comandos y Atajos (Keymaps)
 
@@ -94,6 +96,7 @@ Una vez configurado tu `.env`, puedes invocar al sistema con los siguientes ataj
 | `<leader>ai` | **Inline AI** | Escribe un prompt directamente sobre el código seleccionado para refactorizar en la misma línea. |
 | `<leader>am` | **Multi-Agent (Manual)** | Abre la interfaz de colaboración donde un Arquitecto (Cloud) diseña minimizado y el Desarrollador (Ollama) escribe el código. Se revisan mutuamente (Max 3 veces). |
 | `<leader>af` | **Report Failure** | Si ves que la API actual te da errores 429 (Límite alcanzado), pulsa este atajo para obligar al sistema a "saltar" permanentemente a la siguiente IA de tu lista de Fallback. |
+| `:AiRouterKill` | **Kill Switch** | (Comando de Neovim) Aborta inmediatamente la generación asíncrona de los agentes y apaga el orquestador. |
 
 ---
 

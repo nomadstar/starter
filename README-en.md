@@ -68,7 +68,7 @@ Based on the principle of *"why waste time say lot word when few word do trick"*
 
 The Orchestrator is the crown jewel of this environment. It's a fully asynchronous, highly-advanced master-slave workflow where you act as the Director.
 
-1. **Context Injection, Folders & Web:** When prompted for a task, you can inject entire files or folders by typing `@path/to/file/` (supports `<Tab>` autocomplete!). You can also paste URLs (e.g. `https://docs.rs/serde`), and the system will fetch the website as clean Markdown using *Jina Reader*.
+1. **Recursive Context Injection & Web:** When prompted for a task, you can inject entire files or folders by typing `@path/to/file/`. If you pass a folder, the orchestrator will recursively read all files inside (automatically ignoring garbage like `.git`, `node_modules`, `target`, and images). You can also paste URLs (e.g. `https://docs.rs/serde`), and the system will fetch the website as clean Markdown.
 2. **Architecture & Special Modes:** The **Cloud Architect** evaluates the task complexity and designs a technical plan breaking the work into individual files (Chunks), asking for your interactive *Feedback*. It features intelligent modes:
    - **`MODE: PLAN`**: Complex logic and source code generation.
    - **`MODE: FAST`**: Trivial tasks (< 50 lines) straight to code.
@@ -80,9 +80,11 @@ The Orchestrator is the crown jewel of this environment. It's a fully asynchrono
    - **Score >= 90:** Directly approved.
    - **Score 80-89:** Minor error. The Cloud Architect surgically patches the code on the fly.
    - **Score < 80:** Major error. Ollama is forced to rewrite. **Dynamic Leadership:** The local model that obtained the highest cooperation score is appointed as the exclusive "Leader" to patch the problem in the next iteration.
-7. **Incremental Native Deployment:** Every time a chunk is approved, it is immediately built and saved to your hard drive natively using pure Lua. No need to wait for the entire project to finish to see results!
-8. **Memory & Context Isolation:** The Architect has an automatically injected "short-term memory" that reminds it which files have already been successfully built, preventing it from hallucinating or forgetting context.
-9. **100% Modular Codebase:** This entire engine (located in `lua/plugins/ai_router/`) is segregated into clean modules: `api.lua` (Network), `ui.lua` (Buffers and Alerts), `relay.lua` (Swarm Engine), `utils.lua` (Helpers) and `orchestrator.lua` (Main entrypoint). This allows extending features without breaking the fragile asynchronous cycle.
+7. **Human-in-the-Loop Director:** Even if the Cloud Architect approves a file, the system pauses and asks you for the final verdict. You can approve it (Enter) or reject it by sending your own feedback to force the local models into another iteration. You always have the final say on every file!
+8. **Global Kill Switch:** If the AI starts hallucinating or you want to abort immediately, you can execute the `:AiRouterKill` command in Neovim or send `/kill` via Telegram at *any time* (even while code is generating). This will instantly cut all network connections and shut down the swarm.
+9. **Incremental Native Deployment:** Every time a chunk is approved, it is immediately built and saved to your hard drive natively using pure Lua. No need to wait for the entire project to finish to see results!
+10. **Memory & Context Isolation:** The Architect has an automatically injected "short-term memory" that reminds it which files have already been successfully built, preventing it from hallucinating or forgetting context.
+11. **100% Modular Codebase:** This entire engine (located in `lua/plugins/ai_router/`) is segregated into clean modules: `api.lua` (Network), `ui.lua` (Buffers and Alerts), `relay.lua` (Swarm Engine), `utils.lua` (Helpers) and `orchestrator.lua` (Main entrypoint). This allows extending features without breaking the fragile asynchronous cycle.
 
 ## ⌨️ Commands and Keymaps
 
@@ -94,6 +96,7 @@ Once your `.env` is configured, you can invoke the system with the following key
 | `<leader>ai` | **Inline AI** | Write a prompt directly over the selected code to refactor it in-line. |
 | `<leader>am` | **Multi-Agent (Manual)** | Opens the collaboration interface where an Architect (Cloud) creates a minimized design and the Developer (Ollama) writes the code. They review each other (Max 3 times). |
 | `<leader>af` | **Report Failure** | If you see the current API returning 429 errors (Limit Reached), press this to force the system to permanently "jump" to the next AI in your Fallback list. |
+| `:AiRouterKill` | **Kill Switch** | (Neovim Command) Instantly aborts the asynchronous generation of the agents and kills the orchestrator. |
 
 ---
 

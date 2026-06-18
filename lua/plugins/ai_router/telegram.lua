@@ -96,4 +96,51 @@ function M.stop_polling()
   is_polling = false
 end
 
+local bg_polling = false
+
+function M.start_background_monitor()
+  if not M.is_enabled() then return end
+  if is_polling or bg_polling then return end
+  
+  bg_polling = true
+  local token = utils.get_env("TELEGRAM_BOT_TOKEN")
+  local chat_id = utils.get_env("TELEGRAM_CHAT_ID")
+  local url = "https://api.telegram.org/bot" .. token .. "/getUpdates"
+  local start_time = os.time()
+  
+  local function do_bg_poll()
+    if not bg_polling then return end
+    curl.get(url .. "?offset=" .. (last_update_id + 1) .. "&timeout=10", {
+      callback = function(res)
+        if not bg_polling then return end
+        if res.status == 200 then
+          local ok, data = pcall(vim.json.decode, res.body)
+          if ok and data.ok and data.result then
+            for _, update in ipairs(data.result) do
+              last_update_id = update.update_id
+              if update.message and update.message.chat and tostring(update.message.chat.id) == tostring(chat_id) and update.message.text then
+                local msg_time = update.message.date or 0
+                if msg_time >= start_time - 5 then
+                  if update.message.text == "/kill" then
+                    bg_polling = false
+                    require("plugins.ai_router.api").kill_all()
+                    require("plugins.ai_router.ui").log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
+                    return
+                  end
+                end
+              end
+            end
+          end
+        end
+        if bg_polling then vim.defer_fn(do_bg_poll, 1000) end
+      end
+    })
+  end
+  do_bg_poll()
+end
+
+function M.stop_background_monitor()
+  bg_polling = false
+end
+
 return M

@@ -6,6 +6,11 @@ local api = require("plugins.ai_router.api")
 local relay = require("plugins.ai_router.relay")
 
 function M.start_orchestration()
+  vim.api.nvim_create_user_command("AiRouterKill", function()
+    require("plugins.ai_router.api").kill_all()
+    require("plugins.ai_router.ui").log("\n> 💀 **[Sistema]** Ejecución abortada localmente (AiRouterKill).")
+  end, {})
+
   local buf, win = ui.create_floating_window()
 
   vim.ui.input({ prompt = "Prompt para Arquitecto: " }, function(user_prompt)
@@ -13,6 +18,9 @@ function M.start_orchestration()
       vim.notify("Prompt cancelado o vacío", vim.log.levels.WARN)
       return
     end
+    
+    -- Reset kill switch
+    _G.AI_ROUTER_KILLED = false
 
     ui.log("# ORQUESTADOR MULTI-AGENTE INICIADO\n**Meta:** " .. user_prompt .. "\n")
     
@@ -116,7 +124,9 @@ function M.start_orchestration()
         end
 
         local function start_relay()
+          telegram.start_background_monitor()
           relay.process_chunk(1, files, arch_response, file_purposes, final_prompt, function()
+            telegram.stop_background_monitor()
             ui.log("\n> 🎉 **[Orquestador] Tarea completamente finalizada.**")
           end)
         end
