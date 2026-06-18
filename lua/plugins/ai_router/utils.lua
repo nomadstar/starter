@@ -86,4 +86,32 @@ function M.read_local_context(path)
   return ""
 end
 
+function M.get_recent_file_contents(files, current_index, max_files)
+  local context = ""
+  if current_index <= 1 then return context end
+  
+  local start_idx = math.max(1, current_index - max_files)
+  local approved_files = {}
+  
+  for i = start_idx, current_index - 1 do
+    local filepath = vim.fn.getcwd() .. "/" .. files[i]
+    local file = io.open(filepath, "r")
+    if file then
+      local content = file:read("*a")
+      file:close()
+      table.insert(approved_files, "### [ARCHIVO APROBADO PREVIAMENTE] " .. files[i] .. "\n```\n" .. content .. "\n```\n")
+    else
+      table.insert(approved_files, "### [ARCHIVO APROBADO PREVIAMENTE] " .. files[i] .. "\n(Contenido no disponible en disco)\n")
+    end
+  end
+  
+  if #approved_files > 0 then
+    context = "\n\n=================================\n"
+    context = context .. "[CRÍTICO - MEMORIA ITERATIVA]: Te proporciono el contenido EXACTO de los últimos " .. #approved_files .. " archivos que ya fueron generados exitosamente. Úsalos SOLO como contexto para mantener la continuidad, nomenclatura y el hilo conductor. NO los modifiques ni los repitas. Enfócate ÚNICAMENTE en el nuevo archivo solicitado.\n\n"
+    context = context .. table.concat(approved_files, "\n")
+  end
+  
+  return context
+end
+
 return M

@@ -16,17 +16,20 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
   ui.log("\n> 📦 **Procesando archivo (" .. chunk_index .. "/" .. #files .. "):** `" .. current_file .. "`")
   ui.dump_state(current_file, chunk_index, arch_response, files)
 
-  local approved_context = ""
+  local approved_names_context = ""
   if chunk_index > 1 then
     local approved_files = {}
     for i = 1, chunk_index - 1 do
       table.insert(approved_files, files[i])
     end
-    approved_context = "\n\n[CRITICAL]: The following files have ALREADY been successfully generated and approved: "
+    approved_names_context = "\n\n[CRITICAL]: The following files have ALREADY been successfully generated and approved: "
       .. table.concat(approved_files, ", ")
       .. ". DO NOT request them to be added or fixed. Focus EXCLUSIVELY on: "
       .. current_file
   end
+
+  local ollama_context = approved_names_context .. utils.get_recent_file_contents(files, chunk_index, 1)
+  local cloud_context = approved_names_context .. utils.get_recent_file_contents(files, chunk_index, 5)
 
   local iter_count = 1
   local max_iter = tonumber(utils.get_env("AGENT_MAX_ITERATIONS", "3")) or 3
@@ -46,7 +49,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
       .. "- The document MUST be Complete (cover all edge cases), Precise (technically flawless), Concise in format but exhaustive in content, and Unambiguous.\n"
       .. "- Caveman mode is TEMPORARILY DISABLED for this file. You are FREE and REQUIRED to write as much detailed text as necessary to fully cover the topic.\n"
       .. "- NEVER summarize. NEVER output a 'bare minimum' skeleton.\n"
-      .. approved_context
+      .. ollama_context
   else
     base_prompt = "You are an Expert Developer implementing exactly ONE file.\n"
       .. "FILE: " .. current_file .. "\n"
@@ -55,7 +58,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
       .. "CRITICAL INSTRUCTIONS FOR MODE STANDARD:\n"
       .. "- Do NOT use placeholders or omit ANY code. Write the full file.\n"
       .. "- Ensure the code strictly adheres to the architecture plan.\n"
-      .. approved_context
+      .. ollama_context
   end
 
   local function do_iteration(comments, previous_code, force_model)
@@ -70,7 +73,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
     local function run_next_model()
       if model_idx > #local_models then
         -- Forward declare or call finish_relay
-        M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, approved_context, comments, local_models, function(next_action, patch, best_model, suggested_subtasks)
+        M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, cloud_context, comments, local_models, function(next_action, patch, best_model, suggested_subtasks)
           vim.schedule(function()
             vim.cmd("redraw")
             local stop_beep = ui.start_attention_beeper()
