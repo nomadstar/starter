@@ -136,8 +136,10 @@ function M.call_ollama(model, prompt, callback)
   local accumulated_text = ""
   local continuation_count = 0
   local max_continuations = 5 
+  local is_continuing = false
 
   local function send_request()
+    is_continuing = false
     local body = vim.json.encode({
       model = model,
       messages = messages,
@@ -165,9 +167,10 @@ function M.call_ollama(model, prompt, callback)
               if ok and json.message and json.message.content then
                 accumulated_text = accumulated_text .. json.message.content
                 require("plugins.ai_router.ui").log_stream(json.message.content)
-                if json.done and json.done_reason == "length" then
+                 if json.done and json.done_reason == "length" then
                    if continuation_count < max_continuations then
                      continuation_count = continuation_count + 1
+                     is_continuing = true
                      table.insert(messages, { role = "user", content = "Continue EXACTLY from where you left off. Do not repeat anything. Output ONLY the continuation of the code or markdown block." })
                      send_request()
                      return
@@ -179,6 +182,8 @@ function M.call_ollama(model, prompt, callback)
         end)
       end,
       callback = function(res)
+        if is_continuing then return end
+
         if res.status ~= 200 then
           vim.schedule(function()
             callback("ERROR Ollama: " .. tostring(res.status) .. " " .. tostring(res.body))
