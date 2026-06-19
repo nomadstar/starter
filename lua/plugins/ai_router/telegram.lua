@@ -99,6 +99,18 @@ function M.poll_for_reply(callback, on_kill)
                   local text = update.message.text
                   if text == "/status" then
                     require("plugins.ai_router.utils").get_system_status(function(msg) M.send_message(msg) end)
+                  elseif text:match("^/cat ") or text:match("^/get ") then
+                    local file_path = text:match("^/%a+ (.+)$")
+                    if file_path then
+                      file_path = vim.trim(file_path)
+                      local stat = vim.loop.fs_stat(file_path)
+                      if stat and stat.type == "file" then
+                        local cmd = string.format("curl -s -X POST https://api.telegram.org/bot%s/sendDocument -F chat_id=%s -F document=@%s", token, chat_id, vim.fn.shellescape(file_path))
+                        vim.fn.jobstart(cmd)
+                      else
+                        M.send_message("❌ Error: '" .. file_path .. "' no es un archivo válido o es una carpeta completa.")
+                      end
+                    end
                   elseif text == "/kill" then
                     is_polling = false
                     if on_kill then
@@ -175,6 +187,18 @@ function M.start_background_monitor()
                     return
                   elseif update.message.text == "/status" then
                     require("plugins.ai_router.utils").get_system_status(function(msg) M.send_message(msg) end)
+                  elseif update.message.text:match("^/cat ") or update.message.text:match("^/get ") then
+                    local file_path = update.message.text:match("^/%a+ (.+)$")
+                    if file_path then
+                      file_path = vim.trim(file_path)
+                      local stat = vim.loop.fs_stat(file_path)
+                      if stat and stat.type == "file" then
+                        local cmd = string.format("curl -s -X POST https://api.telegram.org/bot%s/sendDocument -F chat_id=%s -F document=@%s", token, chat_id, vim.fn.shellescape(file_path))
+                        vim.fn.jobstart(cmd)
+                      else
+                        M.send_message("❌ Error: '" .. file_path .. "' no es un archivo válido o es una carpeta completa.")
+                      end
+                    end
                   end
                 end
               end
