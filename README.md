@@ -12,6 +12,11 @@
 
 ---
 
+🎊🎉🐶🐶🐶 **¡INTEGRACIÓN CON OLLAMA SWARM NATIVO!** 🐶🐶🐶🎉🎊
+¡Nuestro Orquestador AiRouter ahora delega de manera inteligente al nuevo `ollama swarm` nativo! ¡Tus agentes locales volarán! 🐕🥳🚀
+
+---
+
 ## 🚀 Instalación
 
 Este repositorio funciona como una configuración completa basada en **NvChad**. Para instalarlo en tu máquina, abre tu terminal y ejecuta:

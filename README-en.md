@@ -12,6 +12,11 @@
 
 ---
 
+🎊🎉🐶🐶🐶 **NEW NATIVE OLLAMA SWARM MODE INTEGRATION!** 🐶🐶🐶🎉🎊
+Our AiRouter Orchestrator now intelligently delegates to the new native `ollama swarm`! Your local agents will fly! 🐕🥳🚀
+
+---
+
 ## 🚀 Installation
 
 This repository acts as a full **NvChad**-based configuration. To install it on your machine, open your terminal and run:
