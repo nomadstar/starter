@@ -287,8 +287,10 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
       local current_model = local_models[model_idx]
       ui.log("> **[Ollama Local (" .. current_model .. ")]** Turno " .. (turn_count + 1) .. ". Paso " .. model_idx .. "/" .. #local_models .. "...\n")
 
+      local is_first_draft = (current_code == nil or current_code == "")
+
       local ollama_prompt
-      if turn_count == 0 and (current_code == nil or current_code == "") then
+      if is_first_draft then
         if iter_count == 1 then
           ollama_prompt = base_prompt .. "\n\nCRITICAL INSTRUCTION: You are the FIRST developer. Write the COMPLETE implementation/document. Output ONLY the raw content inside standard markdown blocks (```). Do NOT use search/replace blocks for this first draft. Write the full text."
         else
@@ -307,7 +309,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
           .. "<<<<\n[exact original lines to replace]\n====\n[new improved lines]\n>>>>\n"
       end
 
-      if turn_count == 0 then
+      if is_first_draft then
         ollama_prompt = ollama_prompt .. "\nAdd a comment somewhere in the code (using appropriate comment syntax): `# Esto lo hizo " .. current_model .. "` to sign your work."
         if mentorship_advice and mentorship_advice ~= "" then
           ollama_prompt = ollama_prompt .. "\n\nMENTORSHIP ADVICE FROM ARCHITECT:\n" .. mentorship_advice .. "\nPlease learn from this advice and apply it to your new implementation."
@@ -328,10 +330,26 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
           return
         end
 
-        if turn_count == 0 and (current_code == nil or current_code == "") then
-          current_code = code_response:match("```[%w]*\n(.-)```") or code_response
-          if vim.trim(current_code) == "" then current_code = code_response end
-          no_change_count = 0
+        if is_first_draft then
+          if code_response:match("NO_CHANGES_NEEDED") then
+             ui.log("\n> ⚠️ **[Sistema]** El modelo abortó o falló la generación del borrador. Saltando...")
+             no_change_count = no_change_count + 1
+          else
+             local extracted = code_response:match("```[%w]*\n(.-)```")
+             if extracted and vim.trim(extracted) ~= "" then
+                current_code = extracted
+                no_change_count = 0
+             else
+                -- Fallback for raw markdown output without ticks
+                if code_response:match("#") or code_response:match("^%s*[%w]") then
+                   current_code = code_response
+                   no_change_count = 0
+                else
+                   ui.log("\n> ⚠️ **[Sistema]** El modelo no generó texto útil. Saltando...")
+                   no_change_count = no_change_count + 1
+                end
+             end
+          end
         else
           local changed = false
           for search_block, replace_block in code_response:gmatch("<<<<(.-)====(.-)>>>>") do
@@ -360,7 +378,9 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
           end
         end
 
-        turn_count = turn_count + 1
+        if current_code ~= nil and current_code ~= "" then
+          turn_count = turn_count + 1
+        end
         model_idx = model_idx + 1
         run_next_model()
       end)

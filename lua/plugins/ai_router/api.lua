@@ -137,6 +137,7 @@ function M.call_ollama(model, prompt, callback)
   local continuation_count = 0
   local max_continuations = 5 
   local is_continuing = false
+  local is_aborted = false
 
   local function send_request()
     is_continuing = false
@@ -161,9 +162,11 @@ function M.call_ollama(model, prompt, callback)
       body = body,
       headers = { ["Content-Type"] = "application/json" },
       stream = function(err, data)
+        if is_aborted then return end
         if err or not data then return end
         
         vim.schedule(function()
+          if is_aborted then return end
           local lines = vim.split(data, "\n")
           for _, line in ipairs(lines) do
             if line ~= "" then
@@ -172,16 +175,39 @@ function M.call_ollama(model, prompt, callback)
                 accumulated_text = accumulated_text .. json.message.content
                 require("plugins.ai_router.ui").log_stream(json.message.content)
                 
-                -- Short-circuit hallucination loop for reviewers
-                if #accumulated_text > 400 then
-                   local has_code = accumulated_text:match("```")
-                   local has_patch = accumulated_text:match("<<<<")
-                   local has_no_changes = accumulated_text:match("NO_CHANGES_NEEDED")
-                   
-                   if not has_code and not has_patch and not has_no_changes then
-                      require("plugins.ai_router.ui").log_stream("\n> ⚠️ **[Sistema]** Abortando generación temprana por posible alucinación (no hay comandos válidos)...")
-                      if job then pcall(function() job:shutdown() end) end
-                      return
+                -- Short-circuit hallucination loop
+                local is_first_dev = prompt:match("FIRST developer")
+                
+                if not is_aborted then
+                   if is_first_dev then
+                      -- First developer: should output ``` code block. 
+                      -- But if writing a markdown file, they might just write markdown directly.
+                      -- Let's only abort if they exceed 1000 chars without ``` IF we enforce code blocks.
+                      -- To be safe, we disable short-circuit for first developer, or set limit to 2000.
+                      if #accumulated_text > 2000 then
+                         local has_code = accumulated_text:match("```")
+                         if not has_code then
+                            is_aborted = true
+                            require("plugins.ai_router.ui").log_stream("\n> ⚠️ **[Sistema]** Abortando borrador inicial (no usó bloque de código tras 2000 chars)...")
+                            if job then pcall(function() job:shutdown() end) end
+                            callback("NO_CHANGES_NEEDED")
+                            return
+                         end
+                      end
+                   else
+                      -- Reviewer: must output <<<< or NO_CHANGES_NEEDED within 400 chars
+                      if #accumulated_text > 400 then
+                         local has_patch = accumulated_text:match("<<<<")
+                         local has_no_changes = accumulated_text:match("NO_CHANGES_NEEDED")
+                         
+                         if not has_patch and not has_no_changes then
+                            is_aborted = true
+                            require("plugins.ai_router.ui").log_stream("\n> ⚠️ **[Sistema]** Abortando revisión temprana (sin comandos válidos en 400 chars)...")
+                            if job then pcall(function() job:shutdown() end) end
+                            callback("NO_CHANGES_NEEDED")
+                            return
+                         end
+                      end
                    end
                 end
 
@@ -200,6 +226,7 @@ function M.call_ollama(model, prompt, callback)
         end)
       end,
       callback = function(res)
+        if is_aborted then return end
         if is_continuing then return end
 
         if res.status ~= 200 then
@@ -218,6 +245,7 @@ function M.call_ollama(model, prompt, callback)
         end)
       end,
       on_error = function(err)
+        if is_aborted then return end
         vim.schedule(function()
           callback("ERROR Ollama Network: " .. vim.inspect(err))
         end)
