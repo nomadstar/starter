@@ -83,7 +83,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
     local current_code = previous_code
 
     local function trigger_finish()
-      M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, cloud_context, comments, local_models, function(next_action, patch, best_model_cb, suggested_subtasks, worst_model_cb, mentorship_advice_cb)
+      M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, cloud_context, comments, local_models, function(next_action, patch, best_model_cb, suggested_subtasks, worst_model_cb, mentorship_advice_cb, is_identical)
         vim.schedule(function()
             vim.cmd("redraw")
             local stop_beep = ui.start_attention_beeper()
@@ -243,7 +243,15 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
               end)
             end
 
-            ask_human_approval()
+            if is_identical then
+              if suggested_subtasks and #suggested_subtasks > 0 then
+                ask_subtasks_approval(suggested_subtasks)
+              else
+                M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+              end
+            else
+              ask_human_approval()
+            end
           end)
         end)
     end
@@ -469,10 +477,21 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
 
       if score >= 90 then
         ui.log("### ✅ [Arquitecto] Archivo `" .. current_file .. "` APROBADO (Score: " .. score .. ") en iteración " .. iter_count .. "!")
-        if utils.save_file_native(current_file, final_code) then
-           ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
+        
+        local is_identical = false
+        local original_content = utils.read_file(current_file)
+        if original_content and vim.trim(final_code) == vim.trim(original_content) then
+          is_identical = true
         end
-        callback("next_chunk", final_code, best_model, suggested_subtasks, worst_model, mentorship_advice)
+
+        if is_identical then
+          ui.log("> ⏭️ **[Sistema]** El archivo original ya es óptimo o no hubo cambios útiles. Manteniendo original.")
+        else
+          if utils.save_file_native(current_file, final_code) then
+            ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
+          end
+        end
+        callback("next_chunk", final_code, best_model, suggested_subtasks, worst_model, mentorship_advice, is_identical)
       elseif score >= 80 then
         ui.log("### 🩹 [Arquitecto] Errores menores en " .. current_file .. " (Score: " .. score .. "). Delegando parche a Cloud Developer...")
         local patch_prompt = "You are a Developer. The code below has these minor issues:\n"
@@ -505,10 +524,21 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
           ui.log("\n> ☁️ **[Cloud Developer]** Cambios aplicados en `" .. current_file .. "`:\n" .. patch_response)
           local patched_code = patch_response:match("```[%w]*\n(.-)```") or patch_response
           ui.log("\n### ✅ [Sistema] Archivo `" .. current_file .. "` APROBADO vía parche Cloud!")
-          if utils.save_file_native(current_file, patched_code) then
-             ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
+          
+          local is_identical = false
+          local original_content = utils.read_file(current_file)
+          if original_content and vim.trim(patched_code) == vim.trim(original_content) then
+            is_identical = true
           end
-          callback("next_chunk", patched_code, best_model, suggested_subtasks, worst_model, mentorship_advice)
+
+          if is_identical then
+            ui.log("> ⏭️ **[Sistema]** El archivo original ya es óptimo o no hubo cambios útiles tras el parche. Manteniendo original.")
+          else
+            if utils.save_file_native(current_file, patched_code) then
+              ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
+            end
+          end
+          callback("next_chunk", patched_code, best_model, suggested_subtasks, worst_model, mentorship_advice, is_identical)
         end)
       else
         ui.log("### ❌ [Arquitecto] Revisión fallida para " .. current_file .. " (Score: " .. score .. "). Comentarios:\n" .. fixes)
