@@ -67,12 +67,14 @@ function M.send_message(text)
 end
 
 local is_polling = false
+local current_poll_id = 0
 local last_update_id = 0
 
 function M.poll_for_reply(callback, on_kill)
   if not M.is_enabled() then return end
-  if is_polling then return end
-
+  
+  current_poll_id = current_poll_id + 1
+  local my_poll_id = current_poll_id
   is_polling = true
   local token = utils.get_env("TELEGRAM_BOT_TOKEN")
   local chat_id = utils.get_env("TELEGRAM_CHAT_ID")
@@ -81,12 +83,12 @@ function M.poll_for_reply(callback, on_kill)
   local start_time = os.time()
 
   local function do_poll()
-    if not is_polling then return end
+    if not is_polling or current_poll_id ~= my_poll_id then return end
     check_neovim_errors()
 
     curl.get(url .. "?offset=" .. (last_update_id + 1) .. "&timeout=10", {
       callback = function(res)
-        if not is_polling then return end
+        if not is_polling or current_poll_id ~= my_poll_id then return end
         
         if res.status == 200 then
           local ok, data = pcall(vim.json.decode, res.body)
@@ -117,7 +119,7 @@ function M.poll_for_reply(callback, on_kill)
                       vim.schedule(function() on_kill() end)
                     end
                     return
-                  elseif text == "/approve" or text == "/ok" then
+                  elseif text == "/approve" or text == "/ok" or text:lower() == "ok" or text:lower() == "si" or text:lower() == "yes" or text:lower() == "y" then
                     is_polling = false
                     vim.schedule(function() callback("") end)
                     return
@@ -134,12 +136,12 @@ function M.poll_for_reply(callback, on_kill)
         end
 
         -- Continuar el poll si sigue activo
-        if is_polling then
+        if is_polling and current_poll_id == my_poll_id then
           vim.defer_fn(do_poll, 1000)
         end
       end,
       on_error = function(err)
-        if is_polling then
+        if is_polling and current_poll_id == my_poll_id then
           vim.defer_fn(do_poll, 2000) -- Reintentar tras un fallo de red
         end
       end
@@ -154,11 +156,13 @@ function M.stop_polling()
 end
 
 local bg_polling = false
+local current_bg_poll_id = 0
 
 function M.start_background_monitor()
   if not M.is_enabled() then return end
-  if is_polling or bg_polling then return end
   
+  current_bg_poll_id = current_bg_poll_id + 1
+  local my_bg_poll_id = current_bg_poll_id
   bg_polling = true
   local token = utils.get_env("TELEGRAM_BOT_TOKEN")
   local chat_id = utils.get_env("TELEGRAM_CHAT_ID")
@@ -166,12 +170,12 @@ function M.start_background_monitor()
   local start_time = os.time()
   
   local function do_bg_poll()
-    if not bg_polling then return end
+    if not bg_polling or current_bg_poll_id ~= my_bg_poll_id then return end
     check_neovim_errors()
     
     curl.get(url .. "?offset=" .. (last_update_id + 1) .. "&timeout=10", {
       callback = function(res)
-        if not bg_polling then return end
+        if not bg_polling or current_bg_poll_id ~= my_bg_poll_id then return end
         if res.status == 200 then
           local ok, data = pcall(vim.json.decode, res.body)
           if ok and data.ok and data.result then
@@ -205,10 +209,10 @@ function M.start_background_monitor()
             end
           end
         end
-        if bg_polling then vim.defer_fn(do_bg_poll, 1000) end
+        if bg_polling and current_bg_poll_id == my_bg_poll_id then vim.defer_fn(do_bg_poll, 1000) end
       end,
       on_error = function(err)
-        if bg_polling then
+        if bg_polling and current_bg_poll_id == my_bg_poll_id then
           vim.defer_fn(do_bg_poll, 2000) -- Reintentar tras un fallo de red
         end
       end
