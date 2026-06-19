@@ -107,8 +107,10 @@ function M.poll_for_reply(callback, on_kill)
                       file_path = vim.trim(file_path)
                       local stat = vim.loop.fs_stat(file_path)
                       if stat and stat.type == "file" then
-                        local cmd = string.format("curl -s -X POST https://api.telegram.org/bot%s/sendDocument -F chat_id=%s -F document=@%s", token, chat_id, vim.fn.shellescape(file_path))
-                        vim.fn.jobstart(cmd)
+                        vim.schedule(function()
+                          local cmd = string.format("curl -s -X POST https://api.telegram.org/bot%s/sendDocument -F chat_id=%s -F document=@%s", token, chat_id, vim.fn.shellescape(file_path))
+                          vim.fn.jobstart(cmd)
+                        end)
                       else
                         M.send_message("❌ Error: '" .. file_path .. "' no es un archivo válido o es una carpeta completa.")
                       end
@@ -197,8 +199,10 @@ function M.start_background_monitor()
                       file_path = vim.trim(file_path)
                       local stat = vim.loop.fs_stat(file_path)
                       if stat and stat.type == "file" then
-                        local cmd = string.format("curl -s -X POST https://api.telegram.org/bot%s/sendDocument -F chat_id=%s -F document=@%s", token, chat_id, vim.fn.shellescape(file_path))
-                        vim.fn.jobstart(cmd)
+                        vim.schedule(function()
+                          local cmd = string.format("curl -s -X POST https://api.telegram.org/bot%s/sendDocument -F chat_id=%s -F document=@%s", token, chat_id, vim.fn.shellescape(file_path))
+                          vim.fn.jobstart(cmd)
+                        end)
                       else
                         M.send_message("❌ Error: '" .. file_path .. "' no es un archivo válido o es una carpeta completa.")
                       end
