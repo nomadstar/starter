@@ -83,6 +83,27 @@ function M.start_orchestration()
     end
 
     process_urls_and_continue(user_prompt, function(final_prompt)
+      local handle = io.popen("ollama swarm --help 2>&1")
+      local has_swarm = false
+      if handle then
+        local result = handle:read("*a")
+        handle:close()
+        if result and not result:match("[Uu]nknown command") and not result:match("[Ee]rror") then
+          has_swarm = true
+        end
+      end
+
+      if has_swarm then
+        ui.log("\n> 🚀 **[Sistema]** Modo Swarm Nativo de Ollama detectado. Delegando orquestación a Go...")
+        vim.schedule(function()
+          vim.cmd("botright split")
+          vim.cmd("resize 20")
+          vim.fn.termopen({"ollama", "swarm", final_prompt})
+          vim.cmd("startinsert")
+        end)
+        return
+      end
+
       ui.log("> **[Arquitecto Cloud]** Analizando petición para minimizar tokens...\n")
 
       local architecture_prompt = "You are an Expert AI Software Architect.\n"
