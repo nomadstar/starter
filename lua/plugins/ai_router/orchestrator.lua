@@ -231,20 +231,16 @@ function M.start_orchestration()
             end
           end
 
+          local resolve = ui.prompt_nonblocking("Feedback al Arquitecto (Vacío para APROBAR): ", function(feedback)
+            process_feedback(feedback, false)
+          end)
+
           telegram.poll_for_reply(function(reply)
-            process_feedback(reply, true)
+            resolve(reply)
           end, function()
             ui.log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
             telegram.stop_polling()
-            if not feedback_processed then
-               feedback_processed = true
-               local esc = vim.api.nvim_replace_termcodes("<C-c>", true, false, true)
-               vim.api.nvim_feedkeys(esc, "n", false)
-            end
-          end)
-
-          vim.ui.input({ prompt = "Feedback al Arquitecto (Vacío para APROBAR): " }, function(feedback)
-            process_feedback(feedback, false)
+            resolve(false)
           end)
         end)
       end

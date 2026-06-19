@@ -141,4 +141,47 @@ function M.dump_state(current_file, chunk_index, arch_response, files)
   end
 end
 
+function M.prompt_nonblocking(prompt_text, callback)
+  local input_buf = vim.api.nvim_create_buf(false, true)
+  local width = 60
+  local win = vim.api.nvim_open_win(input_buf, true, {
+    relative = "editor",
+    width = width,
+    height = 1,
+    row = math.floor(vim.o.lines / 2),
+    col = math.floor((vim.o.columns - width) / 2),
+    style = "minimal",
+    border = "rounded",
+    title = " " .. prompt_text .. " ",
+    title_pos = "center",
+  })
+
+  vim.cmd("startinsert")
+
+  local resolved = false
+
+  local function resolve(value)
+    if resolved then return end
+    resolved = true
+    pcall(vim.api.nvim_win_close, win, true)
+    pcall(vim.api.nvim_buf_delete, input_buf, { force = true })
+    vim.cmd("stopinsert")
+    vim.schedule(function() callback(value) end)
+  end
+
+  -- Enter confirma
+  vim.keymap.set("i", "<CR>", function()
+    local line = vim.api.nvim_buf_get_lines(input_buf, 0, 1, false)[1] or ""
+    resolve(line)
+  end, { buffer = input_buf, nowait = true })
+
+  -- Escape cancela (equivale a vacío = aprobar)
+  vim.keymap.set("i", "<Esc>", function()
+    resolve("")
+  end, { buffer = input_buf, nowait = true })
+
+  -- Exponer resolve para que Telegram lo llame directamente
+  return resolve
+end
+
 return M

@@ -165,25 +165,16 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
               end
               ui.log("⏳ **Esperando decisión del Director Humano...** (Responde en Neovim o envía /approve en Telegram)\n")
 
-              local feedback_processed = false
+              local resolve = ui.prompt_nonblocking(prompt_msg, function(feedback)
+                process_human_feedback(feedback, false)
+              end)
+
               telegram.poll_for_reply(function(reply)
-                if feedback_processed then return end
-                feedback_processed = true
-                process_human_feedback(reply, true)
+                resolve(reply)
               end, function()
                 ui.log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
                 telegram.stop_polling()
-                if not feedback_processed then
-                   feedback_processed = true
-                   local esc = vim.api.nvim_replace_termcodes("<C-c>", true, false, true)
-                   vim.api.nvim_feedkeys(esc, "n", false)
-                end
-              end)
-
-              vim.ui.input({ prompt = prompt_msg }, function(feedback)
-                if feedback_processed then return end
-                feedback_processed = true
-                process_human_feedback(feedback, false)
+                resolve(false)
               end)
             end
             
@@ -239,25 +230,16 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
               end
               ui.log("\n⏳ **¿Añadirlas a la cola de trabajo?** (Vacío=SI, No=Descartar, /q=Preguntar algo)\n")
 
-              local feedback_processed = false
+              local resolve = ui.prompt_nonblocking(prompt_msg, function(feedback)
+                process_subtasks_feedback(feedback, false, subtasks)
+              end)
+
               telegram.poll_for_reply(function(reply)
-                if feedback_processed then return end
-                feedback_processed = true
-                process_subtasks_feedback(reply, true, subtasks)
+                resolve(reply)
               end, function()
                 ui.log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
                 telegram.stop_polling()
-                if not feedback_processed then
-                   feedback_processed = true
-                   local esc = vim.api.nvim_replace_termcodes("<C-c>", true, false, true)
-                   vim.api.nvim_feedkeys(esc, "n", false)
-                end
-              end)
-
-              vim.ui.input({ prompt = prompt_msg }, function(feedback)
-                if feedback_processed then return end
-                feedback_processed = true
-                process_subtasks_feedback(feedback, false, subtasks)
+                resolve(false)
               end)
             end
 
