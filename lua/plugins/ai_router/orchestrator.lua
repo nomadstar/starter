@@ -281,21 +281,33 @@ function M.start_new_orchestration()
         end)
       end
 
-      api.call_cloud(architecture_prompt, function(arch_response)
-        if arch_response:match("^ERROR") then
-          ui.log(arch_response)
-          ui.log("\n> ⚠️ **[Sistema]** Falló el Arquitecto Cloud. Fallback a Ollama...\n")
-          api.call_ollama(utils.get_local_models()[1], architecture_prompt, function(fallback_arch)
-            if fallback_arch:match("^ERROR") then
-              ui.log(fallback_arch)
-              return
-            end
-            execute_architecture(fallback_arch)
-          end)
-          return
-        end
-        execute_architecture(arch_response)
-      end)
+      local best_provider = require("plugins.ai_router.metrics").get_best_provider()
+      if best_provider == "ollama" then
+        ui.log("\n> 🏠 **[Sistema]** Modo Local Activo. Llamando Arquitecto en Ollama...\n")
+        api.call_ollama(utils.get_local_models()[1], architecture_prompt, function(fallback_arch)
+          if fallback_arch:match("^ERROR") then
+            ui.log(fallback_arch)
+            return
+          end
+          execute_architecture(fallback_arch)
+        end)
+      else
+        api.call_cloud(architecture_prompt, function(arch_response)
+          if arch_response:match("^ERROR") then
+            ui.log(arch_response)
+            ui.log("\n> ⚠️ **[Sistema]** Falló el Arquitecto Cloud. Fallback a Ollama...\n")
+            api.call_ollama(utils.get_local_models()[1], architecture_prompt, function(fallback_arch)
+              if fallback_arch:match("^ERROR") then
+                ui.log(fallback_arch)
+                return
+              end
+              execute_architecture(fallback_arch)
+            end)
+            return
+          end
+          execute_architecture(arch_response)
+        end)
+      end
     end)
   end)
 end

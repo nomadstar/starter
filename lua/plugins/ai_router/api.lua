@@ -153,7 +153,8 @@ function M.call_ollama(model, prompt, callback)
 
   local function send_request()
     is_continuing = false
-    local body = vim.json.encode({
+    local is_json = prompt:lower():match("json") ~= nil
+    local payload = {
       model = model,
       messages = messages,
       stream = true,
@@ -161,11 +162,15 @@ function M.call_ollama(model, prompt, callback)
       options = {
         num_predict = tonumber(utils.get_env("AGENT_LOCAL_MAX_PREDICT", "4096")),
         num_ctx = tonumber(utils.get_env("AGENT_LOCAL_MAX_CTX", "16384")),
-        repeat_penalty = 1.15,
+        repeat_penalty = tonumber(utils.get_env("AGENT_LOCAL_REPEAT_PENALTY", "1.05")),
         top_k = 40,
         top_p = 0.9,
       },
-    })
+    }
+    if is_json then
+      payload.format = "json"
+    end
+    local body = vim.json.encode(payload)
 
     if _G.AI_ROUTER_KILLED then return callback("ERROR: Killed") end
 

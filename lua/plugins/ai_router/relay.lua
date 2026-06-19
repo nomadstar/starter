@@ -528,37 +528,17 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
         end
         callback("next_chunk", final_code, best_model, suggested_subtasks, worst_model, mentorship_advice, is_identical)
       elseif score >= 80 then
-        ui.log("### 🩹 [Arquitecto] Errores menores en " .. current_file .. " (Score: " .. score .. "). Delegando parche a Cloud Developer...")
+        local best_provider = require("plugins.ai_router.metrics").get_best_provider()
         local patch_prompt = "You are a Developer. The code below has these minor issues:\n"
           .. fixes
           .. "\n\nCODE:\n"
           .. final_code
           .. "\n\nFix the code. Return the fixed code inside a markdown block. BEFORE the code block, briefly list the exact changes you made (verbose log)."
 
-        local is_cloud_working = true
-        local patch_states = {
-          "🧐 [Cloud] Leyendo feedback de revisión...",
-          "🛠️ [Cloud] Aplicando parche sobre el código original..."
-        }
-        for i, st in ipairs(patch_states) do
-          vim.defer_fn(function()
-            if is_cloud_working and not _G.AI_ROUTER_KILLED then
-               require("plugins.ai_router.ui").log_stream("\n> " .. st)
-            end
-          end, i * 3000)
-        end
-
-        api.call_cloud(patch_prompt, function(patch_response)
-          is_cloud_working = false
-          if patch_response:match("^ERROR") then
-            ui.log("\n> ⚠️ **[Sistema]** Falló el parche en la nube. Forzando iteración local...")
-            callback("retry", fixes, best_model, suggested_subtasks, worst_model, mentorship_advice)
-            return
-          end
-
-          ui.log("\n> ☁️ **[Cloud Developer]** Cambios aplicados en `" .. current_file .. "`:\n" .. patch_response)
+        local function handle_patch_response(patch_response)
+          ui.log("\n> 🛠️ **[Developer]** Cambios aplicados en `" .. current_file .. "`:\n" .. patch_response)
           local patched_code = patch_response:match("```[%w]*\n(.-)```") or patch_response
-          ui.log("\n### ✅ [Sistema] Archivo `" .. current_file .. "` APROBADO vía parche Cloud!")
+          ui.log("\n### ✅ [Sistema] Archivo `" .. current_file .. "` APROBADO vía parche!")
           
           local is_identical = false
           local original_content = utils.read_file(current_file)
@@ -574,7 +554,43 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
             end
           end
           callback("next_chunk", patched_code, best_model, suggested_subtasks, worst_model, mentorship_advice, is_identical)
-        end)
+        end
+
+        if best_provider == "ollama" then
+          ui.log("### 🩹 [Arquitecto] Errores menores en " .. current_file .. " (Score: " .. score .. "). Delegando parche a Ollama...")
+          api.call_ollama(local_models[1], patch_prompt, function(patch_response)
+            if patch_response:match("^ERROR") then
+              ui.log("\n> ⚠️ **[Sistema]** Falló el parche en Ollama. Forzando iteración local...")
+              callback("retry", fixes, best_model, suggested_subtasks, worst_model, mentorship_advice)
+              return
+            end
+            handle_patch_response(patch_response)
+          end)
+        else
+          ui.log("### 🩹 [Arquitecto] Errores menores en " .. current_file .. " (Score: " .. score .. "). Delegando parche a Cloud Developer...")
+          local is_cloud_working = true
+          local patch_states = {
+            "🧐 [Cloud] Leyendo feedback de revisión...",
+            "🛠️ [Cloud] Aplicando parche sobre el código original..."
+          }
+          for i, st in ipairs(patch_states) do
+            vim.defer_fn(function()
+              if is_cloud_working and not _G.AI_ROUTER_KILLED then
+                 require("plugins.ai_router.ui").log_stream("\n> " .. st)
+              end
+            end, i * 3000)
+          end
+
+          api.call_cloud(patch_prompt, function(patch_response)
+            is_cloud_working = false
+            if patch_response:match("^ERROR") then
+              ui.log("\n> ⚠️ **[Sistema]** Falló el parche en la nube. Forzando iteración local...")
+              callback("retry", fixes, best_model, suggested_subtasks, worst_model, mentorship_advice)
+              return
+            end
+            handle_patch_response(patch_response)
+          end)
+        end
       else
         ui.log("### ❌ [Arquitecto] Revisión fallida para " .. current_file .. " (Score: " .. score .. "). Comentarios:\n" .. fixes)
         if worst_model ~= "" and best_model ~= "" and worst_model ~= best_model then
@@ -588,36 +604,47 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
       end
     end
 
-    local is_cloud_working = true
-    local states = {
-      "🧐 [Cloud] Leyendo sumisión del Developer...",
-      "🧠 [Cloud] Analizando arquitectura y edge cases...",
-      "📋 [Cloud] Redactando reporte de revisión..."
-    }
-    for i, st in ipairs(states) do
-      vim.defer_fn(function()
-        if is_cloud_working and not _G.AI_ROUTER_KILLED then
-           require("plugins.ai_router.ui").log_stream("\n> " .. st)
+    local best_provider = require("plugins.ai_router.metrics").get_best_provider()
+    if best_provider == "ollama" then
+      api.call_ollama(local_models[1], review_prompt, function(fallback_review)
+        if fallback_review:match("^ERROR") then
+          ui.log(fallback_review)
+          return
         end
-      end, i * 3000)
-    end
-
-    api.call_cloud(review_prompt, function(review_response)
-      is_cloud_working = false
-      if review_response:match("^ERROR") then
-        ui.log(review_response)
-        ui.log("\n> ⚠️ **[Sistema]** Falló el Revisor Cloud. Fallback a Ollama...\n")
-        api.call_ollama(local_models[1], review_prompt, function(fallback_review)
-          if fallback_review:match("^ERROR") then
-            ui.log(fallback_review)
-            return
+        handle_review(fallback_review)
+      end)
+    else
+      local is_cloud_working = true
+      local states = {
+        "🧐 [Cloud] Leyendo sumisión del Developer...",
+        "🧠 [Cloud] Analizando arquitectura y edge cases...",
+        "📋 [Cloud] Redactando reporte de revisión..."
+      }
+      for i, st in ipairs(states) do
+        vim.defer_fn(function()
+          if is_cloud_working and not _G.AI_ROUTER_KILLED then
+             require("plugins.ai_router.ui").log_stream("\n> " .. st)
           end
-          handle_review(fallback_review)
-        end)
-        return
+        end, i * 3000)
       end
-      handle_review(review_response)
-    end)
+
+      api.call_cloud(review_prompt, function(review_response)
+        is_cloud_working = false
+        if review_response:match("^ERROR") then
+          ui.log(review_response)
+          ui.log("\n> ⚠️ **[Sistema]** Falló el Revisor Cloud. Fallback a Ollama...\n")
+          api.call_ollama(local_models[1], review_prompt, function(fallback_review)
+            if fallback_review:match("^ERROR") then
+              ui.log(fallback_review)
+              return
+            end
+            handle_review(fallback_review)
+          end)
+          return
+        end
+        handle_review(review_response)
+      end)
+    end
   end)
 end
 
