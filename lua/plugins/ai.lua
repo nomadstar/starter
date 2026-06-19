@@ -129,6 +129,10 @@ return {
         end
       end, {})
       
+      vim.api.nvim_create_user_command("NewTeleBot", function()
+        require("plugins.ai_router.telegram").update_bot_commands()
+      end, {})
+      
       -- Setup base
       require("codecompanion").setup({
          display = {

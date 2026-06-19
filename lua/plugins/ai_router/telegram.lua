@@ -221,4 +221,35 @@ function M.stop_background_monitor()
   bg_polling = false
 end
 
+function M.update_bot_commands()
+  if not M.is_enabled() then
+    vim.notify("Telegram no está configurado en .env", vim.log.levels.WARN)
+    return
+  end
+  local token = utils.get_env("TELEGRAM_BOT_TOKEN")
+  local url = "https://api.telegram.org/bot" .. token .. "/setMyCommands"
+  local commands = {
+    commands = {
+      {command = "status", description = "Ver estado actual del sistema"},
+      {command = "kill", description = "Abortar ejecución remotamente"},
+      {command = "approve", description = "Aprobar archivo actual"},
+      {command = "get", description = "Descargar archivo local (/get <ruta>)"},
+      {command = "cat", description = "Descargar archivo local (/cat <ruta>)"},
+      {command = "q", description = "Hacer pregunta al Arquitecto (/q <pregunta>)"}
+    }
+  }
+
+  curl.post(url, {
+    body = vim.json.encode(commands),
+    headers = { ["Content-Type"] = "application/json" },
+    callback = function(res)
+      if res.status == 200 then
+        vim.schedule(function() vim.notify("Comandos de Telegram actualizados con éxito", vim.log.levels.INFO) end)
+      else
+        vim.schedule(function() vim.notify("Error al actualizar comandos Telegram: " .. tostring(res.body), vim.log.levels.ERROR) end)
+      end
+    end
+  })
+end
+
 return M
