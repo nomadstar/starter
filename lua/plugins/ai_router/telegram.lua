@@ -38,7 +38,7 @@ function M.send_message(text)
   local url = "https://api.telegram.org/bot" .. token .. "/sendMessage"
 
   -- Limpiar el markdown complejo que telegram no soporta bien
-  local clean_text = text:gsub("```", ""):gsub("%*%(%*%", ""):gsub("%*%)%*%", "")
+  local clean_text = text:gsub("```", ""):gsub("%*%*", "")
 
   local chunk_size = 4000
   
@@ -66,9 +66,7 @@ function M.send_message(text)
   send_chunk(1)
 end
 
-local is_polling = false
 local current_poll_id = 0
-local last_update_id = 0
 
 function M.poll_for_reply(callback, on_kill)
   if not M.is_enabled() then return end
@@ -97,7 +95,7 @@ function M.poll_for_reply(callback, on_kill)
               last_update_id = update.update_id
               if update.message and update.message.chat and tostring(update.message.chat.id) == tostring(chat_id) and update.message.text then
                 local msg_time = update.message.date or 0
-                if msg_time >= start_time - 5 then
+                if msg_time >= start_time - 30 then
                   local text = update.message.text
                   if text == "/status" then
                     require("plugins.ai_router.utils").get_system_status(function(msg) M.send_message(msg) end)
@@ -185,7 +183,7 @@ function M.start_background_monitor()
               last_update_id = update.update_id
               if update.message and update.message.chat and tostring(update.message.chat.id) == tostring(chat_id) and update.message.text then
                 local msg_time = update.message.date or 0
-                if msg_time >= start_time - 5 then
+                if msg_time >= start_time - 30 then
                   if update.message.text == "/kill" then
                     bg_polling = false
                     require("plugins.ai_router.api").kill_all()
