@@ -7,22 +7,20 @@ local is_polling = false
 
 local last_msg_len = 0
 local function check_neovim_errors()
-  vim.schedule(function()
-    local ok, msgs = pcall(vim.fn.execute, "messages")
-    if not ok or type(msgs) ~= "string" then return end
+  local ok, msgs = pcall(vim.fn.execute, "messages")
+  if not ok or type(msgs) ~= "string" then return end
 
-    if #msgs < last_msg_len then last_msg_len = 0 end
+  if #msgs < last_msg_len then last_msg_len = 0 end
 
-    if #msgs > last_msg_len then
-      local new_msgs = msgs:sub(last_msg_len + 1)
-      last_msg_len = #msgs
+  if #msgs > last_msg_len then
+    local new_msgs = msgs:sub(last_msg_len + 1)
+    last_msg_len = #msgs
 
-      if new_msgs:match("Error") or new_msgs:match("stack traceback:") or new_msgs:match("attempt to") then
-        local safe_msg = new_msgs:sub(1, 3500)
-        M.send_message("🔥 **[NVIM ERROR]**\n```text\n" .. safe_msg .. "\n```")
-      end
+    if new_msgs:match("Error") or new_msgs:match("stack traceback:") or new_msgs:match("attempt to") then
+      local safe_msg = new_msgs:sub(1, 3500)
+      M.send_message("🔥 **[NVIM ERROR]**\n```text\n" .. safe_msg .. "\n```")
     end
-  end)
+  end
 end
 
 function M.is_enabled()
@@ -86,59 +84,59 @@ function M.poll_for_reply(callback, on_kill)
 
     curl.get(url .. "?offset=" .. (last_update_id + 1) .. "&timeout=10", {
       callback = function(res)
-        if not is_polling or current_poll_id ~= my_poll_id then return end
-        
-        if res.status == 200 then
-          local ok, data = pcall(vim.json.decode, res.body)
-          if ok and data.ok and data.result then
-            for _, update in ipairs(data.result) do
-              last_update_id = update.update_id
-              if update.message and update.message.chat and tostring(update.message.chat.id) == tostring(chat_id) and update.message.text then
-                local msg_time = update.message.date or 0
-                if msg_time >= start_time - 30 then
-                  local text = update.message.text
-                  if text == "/status" then
-                    require("plugins.ai_router.utils").get_system_status(function(msg) M.send_message(msg) end)
-                  elseif text:match("^/cat ") or text:match("^/get ") then
-                    local file_path = text:match("^/%a+ (.+)$")
-                    if file_path then
-                      file_path = vim.trim(file_path)
-                      local stat = vim.loop.fs_stat(file_path)
-                      if stat and stat.type == "file" then
-                        vim.schedule(function()
+        vim.schedule(function()
+          if not is_polling or current_poll_id ~= my_poll_id then return end
+          
+          if res.status == 200 then
+            local ok, data = pcall(vim.json.decode, res.body)
+            if ok and data.ok and data.result then
+              for _, update in ipairs(data.result) do
+                last_update_id = update.update_id
+                if update.message and update.message.chat and tostring(update.message.chat.id) == tostring(chat_id) and update.message.text then
+                  local msg_time = update.message.date or 0
+                  if msg_time >= start_time - 30 then
+                    local text = update.message.text
+                    if text == "/status" then
+                      require("plugins.ai_router.utils").get_system_status(function(msg) M.send_message(msg) end)
+                    elseif text:match("^/cat ") or text:match("^/get ") then
+                      local file_path = text:match("^/%a+ (.+)$")
+                      if file_path then
+                        file_path = vim.trim(file_path)
+                        local stat = vim.loop.fs_stat(file_path)
+                        if stat and stat.type == "file" then
                           local cmd = string.format("curl -s -X POST https://api.telegram.org/bot%s/sendDocument -F chat_id=%s -F document=@%s", token, chat_id, vim.fn.shellescape(file_path))
                           vim.fn.jobstart(cmd)
-                        end)
-                      else
-                        M.send_message("❌ Error: '" .. file_path .. "' no es un archivo válido o es una carpeta completa.")
+                        else
+                          M.send_message("❌ Error: '" .. file_path .. "' no es un archivo válido o es una carpeta completa.")
+                        end
                       end
+                    elseif text == "/kill" then
+                      is_polling = false
+                      if on_kill then
+                        on_kill()
+                      end
+                      return
+                    elseif text == "/approve" or text == "/ok" or text:lower() == "ok" or text:lower() == "si" or text:lower() == "yes" or text:lower() == "y" then
+                      is_polling = false
+                      callback("")
+                      return
+                    else
+                      -- Enviar cualquier otro texto como feedback
+                      is_polling = false
+                      callback(text)
+                      return
                     end
-                  elseif text == "/kill" then
-                    is_polling = false
-                    if on_kill then
-                      vim.schedule(function() on_kill() end)
-                    end
-                    return
-                  elseif text == "/approve" or text == "/ok" or text:lower() == "ok" or text:lower() == "si" or text:lower() == "yes" or text:lower() == "y" then
-                    is_polling = false
-                    vim.schedule(function() callback("") end)
-                    return
-                  else
-                    -- Enviar cualquier otro texto como feedback
-                    is_polling = false
-                    vim.schedule(function() callback(text) end)
-                    return
                   end
                 end
               end
             end
           end
-        end
 
-        -- Continuar el poll si sigue activo
-        if is_polling and current_poll_id == my_poll_id then
-          vim.defer_fn(do_poll, 1000)
-        end
+          -- Continuar el poll si sigue activo
+          if is_polling and current_poll_id == my_poll_id then
+            vim.defer_fn(do_poll, 1000)
+          end
+        end)
       end,
       on_error = function(err)
         if is_polling and current_poll_id == my_poll_id then
@@ -175,34 +173,34 @@ function M.start_background_monitor()
     
     curl.get(url .. "?offset=" .. (last_update_id + 1) .. "&timeout=10", {
       callback = function(res)
-        if not bg_polling or current_bg_poll_id ~= my_bg_poll_id then return end
-        if res.status == 200 then
-          local ok, data = pcall(vim.json.decode, res.body)
-          if ok and data.ok and data.result then
-            for _, update in ipairs(data.result) do
-              last_update_id = update.update_id
-              if update.message and update.message.chat and tostring(update.message.chat.id) == tostring(chat_id) and update.message.text then
-                local msg_time = update.message.date or 0
-                if msg_time >= start_time - 30 then
-                  if update.message.text == "/kill" then
-                    bg_polling = false
-                    require("plugins.ai_router.api").kill_all()
-                    require("plugins.ai_router.ui").log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
-                    return
-                  elseif update.message.text == "/status" then
-                    require("plugins.ai_router.utils").get_system_status(function(msg) M.send_message(msg) end)
-                  elseif update.message.text:match("^/cat ") or update.message.text:match("^/get ") then
-                    local file_path = update.message.text:match("^/%a+ (.+)$")
-                    if file_path then
-                      file_path = vim.trim(file_path)
-                      local stat = vim.loop.fs_stat(file_path)
-                      if stat and stat.type == "file" then
-                        vim.schedule(function()
+        vim.schedule(function()
+          if not bg_polling or current_bg_poll_id ~= my_bg_poll_id then return end
+          if res.status == 200 then
+            local ok, data = pcall(vim.json.decode, res.body)
+            if ok and data.ok and data.result then
+              for _, update in ipairs(data.result) do
+                last_update_id = update.update_id
+                if update.message and update.message.chat and tostring(update.message.chat.id) == tostring(chat_id) and update.message.text then
+                  local msg_time = update.message.date or 0
+                  if msg_time >= start_time - 30 then
+                    if update.message.text == "/kill" then
+                      bg_polling = false
+                      require("plugins.ai_router.api").kill_all()
+                      require("plugins.ai_router.ui").log("\n> 💀 **[Sistema]** Ejecución abortada remotamente vía Telegram (/kill).")
+                      return
+                    elseif update.message.text == "/status" then
+                      require("plugins.ai_router.utils").get_system_status(function(msg) M.send_message(msg) end)
+                    elseif update.message.text:match("^/cat ") or update.message.text:match("^/get ") then
+                      local file_path = update.message.text:match("^/%a+ (.+)$")
+                      if file_path then
+                        file_path = vim.trim(file_path)
+                        local stat = vim.loop.fs_stat(file_path)
+                        if stat and stat.type == "file" then
                           local cmd = string.format("curl -s -X POST https://api.telegram.org/bot%s/sendDocument -F chat_id=%s -F document=@%s", token, chat_id, vim.fn.shellescape(file_path))
                           vim.fn.jobstart(cmd)
-                        end)
-                      else
-                        M.send_message("❌ Error: '" .. file_path .. "' no es un archivo válido o es una carpeta completa.")
+                        else
+                          M.send_message("❌ Error: '" .. file_path .. "' no es un archivo válido o es una carpeta completa.")
+                        end
                       end
                     end
                   end
@@ -210,8 +208,8 @@ function M.start_background_monitor()
               end
             end
           end
-        end
-        if bg_polling and current_bg_poll_id == my_bg_poll_id then vim.defer_fn(do_bg_poll, 1000) end
+          if bg_polling and current_bg_poll_id == my_bg_poll_id then vim.defer_fn(do_bg_poll, 1000) end
+        end)
       end,
       on_error = function(err)
         if bg_polling and current_bg_poll_id == my_bg_poll_id then

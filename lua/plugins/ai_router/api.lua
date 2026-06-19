@@ -2,6 +2,7 @@ local M = {}
 local curl = require("plenary.curl")
 local utils = require("plugins.ai_router.utils")
 local metrics = require("plugins.ai_router.metrics")
+local ui = require("plugins.ai_router.ui")
 
 _G.AI_ROUTER_ACTIVE_JOBS = _G.AI_ROUTER_ACTIVE_JOBS or {}
 _G.AI_ROUTER_KILLED = false
@@ -53,13 +54,19 @@ function M.call_cloud(prompt, callback)
 
     if _G.AI_ROUTER_KILLED then return callback("ERROR: Killed") end
 
-    local job = curl.post(url, {
+    local job = nil
+    job = curl.post(url, {
       body = body,
       headers = {
         ["Content-Type"] = "application/json",
         ["Authorization"] = "Bearer " .. key,
       },
       callback = function(res)
+        if job then
+          for i, j in ipairs(_G.AI_ROUTER_ACTIVE_JOBS) do
+            if j == job then table.remove(_G.AI_ROUTER_ACTIVE_JOBS, i); break end
+          end
+        end
         if res.status ~= 200 then
           local is_auth_error = (res.status == 401 or res.status == 403)
           local can_retry = not is_auth_error and index < #models
@@ -104,6 +111,11 @@ function M.call_cloud(prompt, callback)
         end)
       end,
       on_error = function(err)
+        if job then
+          for i, j in ipairs(_G.AI_ROUTER_ACTIVE_JOBS) do
+            if j == job then table.remove(_G.AI_ROUTER_ACTIVE_JOBS, i); break end
+          end
+        end
         vim.schedule(function()
           if index < #models then
             ui.log("\n> ⚠️ **[Sistema]** Fallo de red con " .. current_model .. ". Intentando con fallback...", vim.log.levels.WARN)
@@ -180,10 +192,6 @@ function M.call_ollama(model, prompt, callback)
                 
                 if not is_aborted then
                    if is_first_dev then
-                      -- First developer: should output ``` code block. 
-                      -- But if writing a markdown file, they might just write markdown directly.
-                      -- Let's only abort if they exceed 1000 chars without ``` IF we enforce code blocks.
-                      -- To be safe, we disable short-circuit for first developer, or set limit to 2000.
                       if #accumulated_text > 2000 then
                          local has_code = accumulated_text:match("```")
                          if not has_code then
@@ -195,7 +203,6 @@ function M.call_ollama(model, prompt, callback)
                          end
                       end
                    else
-                      -- Reviewer: must output <<<< or NO_CHANGES_NEEDED within 400 chars
                       if #accumulated_text > 400 then
                          local has_patch = accumulated_text:match("<<<<")
                          local has_no_changes = accumulated_text:match("NO_CHANGES_NEEDED")
@@ -209,6 +216,31 @@ function M.call_ollama(model, prompt, callback)
                          end
                       end
                    end
+
+                   -- Detect repetitive hallucination loops
+                   local len = #accumulated_text
+                   if len > 600 then
+                      local tail = accumulated_text:sub(len - 500)
+                      local pattern = accumulated_text:sub(len - 50)
+                      -- escape magic characters
+                      pattern = pattern:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")
+                      local _, count = tail:gsub(pattern, "")
+                      if count >= 4 then
+                         is_aborted = true
+                         require("plugins.ai_router.ui").log_stream("\n> ⚠️ **[Sistema]** Abortando (Bucle de alucinación repetitiva detectado)...")
+                         if job then pcall(function() job:shutdown() end) end
+                         callback("ERROR: Hallucination Loop")
+                         return
+                      end
+                   end
+                end
+
+                if #accumulated_text > 500000 then
+                   is_aborted = true
+                   require("plugins.ai_router.ui").log_stream("\n> ⚠️ **[Sistema]** Abortando (Exceso de 500KB de texto acumulado)...")
+                   if job then pcall(function() job:shutdown() end) end
+                   callback("NO_CHANGES_NEEDED")
+                   return
                 end
 
                  if json.done and json.done_reason == "length" then
@@ -226,6 +258,11 @@ function M.call_ollama(model, prompt, callback)
         end)
       end,
       callback = function(res)
+        if job then
+          for i, j in ipairs(_G.AI_ROUTER_ACTIVE_JOBS) do
+            if j == job then table.remove(_G.AI_ROUTER_ACTIVE_JOBS, i); break end
+          end
+        end
         if is_aborted then return end
         if is_continuing then return end
 
@@ -245,6 +282,11 @@ function M.call_ollama(model, prompt, callback)
         end)
       end,
       on_error = function(err)
+        if job then
+          for i, j in ipairs(_G.AI_ROUTER_ACTIVE_JOBS) do
+            if j == job then table.remove(_G.AI_ROUTER_ACTIVE_JOBS, i); break end
+          end
+        end
         if is_aborted then return end
         vim.schedule(function()
           callback("ERROR Ollama Network: " .. vim.inspect(err))

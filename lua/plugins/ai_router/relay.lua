@@ -4,10 +4,24 @@ local ui = require("plugins.ai_router.ui")
 local utils = require("plugins.ai_router.utils")
 
 function M.process_chunk(chunk_index, files, arch_response, file_purposes, final_prompt, on_complete)
+  if chunk_index <= #files then
+    local ok_state, state_json = pcall(vim.json.encode, {
+      chunk_index = chunk_index,
+      files = files,
+      arch_response = arch_response,
+      file_purposes = file_purposes,
+      final_prompt = final_prompt
+    })
+    if ok_state then
+      utils.save_file_native(".ai_router_resume.json", state_json)
+    end
+  end
+
   if chunk_index > #files then
     ui.log("\n> 🎯 **Todos los archivos han sido generados y guardados en disco.**")
     ui.log("> 📄 El estado final de la memoria se ha guardado en `.ai_router_state.md`")
     ui.dump_state(nil, chunk_index, arch_response, files)
+    pcall(os.remove, vim.fn.getcwd() .. "/.ai_router_resume.json")
     on_complete()
     return
   end
@@ -46,6 +60,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
       .. "Overall Project Goal: " .. final_prompt .. "\n\n"
       .. "CRITICAL INSTRUCTIONS FOR MODE DOCS:\n"
       .. "- You MUST write EXCEPTIONAL, EXTENSIVE, and DEEPLY COMPREHENSIVE documentation.\n"
+      .. "- Write ONLY the content for this specific file. STOP after finishing this single file. Do NOT generate other files.\n"
       .. "- The document MUST be Complete (cover all edge cases), Precise (technically flawless), Concise in format but exhaustive in content, and Unambiguous.\n"
       .. "- Caveman mode is TEMPORARILY DISABLED for this file. You are FREE and REQUIRED to write as much detailed text as necessary to fully cover the topic.\n"
       .. "- NEVER summarize. NEVER output a 'bare minimum' skeleton.\n"
@@ -83,7 +98,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
     local current_code = previous_code
 
     local function trigger_finish()
-      M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, cloud_context, comments, local_models, function(next_action, patch, best_model_cb, suggested_subtasks, worst_model_cb, mentorship_advice_cb, is_identical)
+      M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, cloud_context, comments, local_models, function(next_action, patch, best_model_cb, suggested_subtasks, worst_model_cb, mentorship_advice_cb, is_identical, score)
         vim.schedule(function()
             vim.cmd("redraw")
             local stop_beep = ui.start_attention_beeper()
@@ -132,20 +147,35 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
                   if suggested_subtasks and #suggested_subtasks > 0 then
                     ask_subtasks_approval(suggested_subtasks)
                   else
-                    M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+                    vim.schedule(function()
+                      M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+                    end)
                   end
                 elseif next_action == "retry" then
                   iter_count = iter_count + 1
                   if iter_count > max_iter then
                     ui.log("\n### ⚠️ [Sistema] Máximo de iteraciones alcanzado para " .. current_file .. ". Aceptando tal como está.")
-                    if utils.save_file_native(current_file, patch) then
-                       ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
+                    if patch and vim.trim(patch) ~= "" then
+                      if utils.save_file_native(current_file, patch) then
+                         ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
+                      end
+                    else
+                      ui.log("### ⏭️ Documento vacío. Saltando guardado.")
                     end
-                    M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+                    vim.schedule(function()
+                      M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+                    end)
                   else
                     ui.log("\n---\n")
                     telegram.start_background_monitor()
-                    do_iteration(patch, current_code, best_model_cb, worst_model_cb, mentorship_advice_cb)
+                    
+                    local code_to_pass = current_code
+                    if score and score < 50 then
+                      code_to_pass = nil
+                      ui.log("> 🗑️ **[Sistema]** Borrador previo descartado por bajo puntaje (Score < 50). Reiniciando desde cero.")
+                    end
+                    
+                    do_iteration(patch, code_to_pass, best_model_cb, worst_model_cb, mentorship_advice_cb)
                   end
                 end
               end
@@ -216,7 +246,9 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
                 end
               end
               
-              M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+              vim.schedule(function()
+                M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+              end)
             end
 
             ask_subtasks_approval = function(subtasks)
@@ -247,7 +279,9 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
               if suggested_subtasks and #suggested_subtasks > 0 then
                 ask_subtasks_approval(suggested_subtasks)
               else
-                M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+                vim.schedule(function()
+                  M.process_chunk(chunk_index + 1, files, arch_response, file_purposes, final_prompt, on_complete)
+                end)
               end
             else
               ask_human_approval()
@@ -282,7 +316,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
       local ollama_prompt
       if is_first_draft then
         if iter_count == 1 then
-          ollama_prompt = base_prompt .. "\n\nCRITICAL INSTRUCTION: You are the FIRST developer. Write the COMPLETE implementation/document. Output ONLY the raw content inside standard markdown blocks (```). Do NOT use search/replace blocks for this first draft. Write the full text."
+          ollama_prompt = base_prompt .. "\n\nCRITICAL INSTRUCTION: You are the FIRST developer. Write the COMPLETE implementation/document for " .. current_file .. " ONLY. Output ONLY the raw content inside standard markdown blocks (```). Do NOT use search/replace blocks for this first draft. Write the full text. STOP after finishing this single file."
         else
           ollama_prompt = base_prompt .. "\n\n=================================\n\n"
             .. "You are currently FIXING this file based on the Architect's feedback.\n"
@@ -346,6 +380,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
             local search = vim.trim(search_block)
             local replace = vim.trim(replace_block)
             if search ~= "" then
+              search = search:gsub("\r", "")
               local start_idx, end_idx = current_code:find(search, 1, true)
               if start_idx then
                 current_code = current_code:sub(1, start_idx - 1) .. replace .. current_code:sub(end_idx + 1)
@@ -549,7 +584,7 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
           ui.log("> 👑 El modelo **" .. best_model .. "** liderará el parcheo de este archivo.")
         end
 
-        callback("retry", fixes, best_model, suggested_subtasks, worst_model, mentorship_advice)
+        callback("retry", fixes, best_model, suggested_subtasks, worst_model, mentorship_advice, false, score)
       end
     end
 

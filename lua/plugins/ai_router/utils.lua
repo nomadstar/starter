@@ -19,6 +19,14 @@ function M.is_valid_response(text)
   return text and vim.trim(text) ~= "" and not text:match("^%s*$")
 end
 
+function M.read_file(path)
+  local f = io.open(vim.fn.getcwd() .. "/" .. path, "r")
+  if not f then return nil end
+  local content = f:read("*a")
+  f:close()
+  return content
+end
+
 function M.save_file_native(filename, content)
   local cwd = vim.fn.getcwd()
   local file_path = cwd .. "/" .. filename
@@ -58,6 +66,14 @@ function M.jina_fetch(url, callback)
 end
 function M.read_local_context(path)
   local expanded = vim.fn.expand(path)
+  
+  local abs = vim.fn.fnamemodify(expanded, ":p")
+  local cwd = vim.fn.getcwd() .. "/"
+  if not abs:match("^" .. vim.pesc(cwd)) then
+    require("plugins.ai_router.ui").log("> ❌ **[Sistema]** Path fuera del proyecto: " .. path)
+    return ""
+  end
+
   if vim.fn.isdirectory(expanded) == 1 then
     local files = vim.fn.globpath(expanded, "**/*", 0, 1)
     local context = ""
@@ -78,13 +94,18 @@ function M.read_local_context(path)
   elseif vim.fn.filereadable(expanded) == 1 then
     local file = io.open(expanded, "r")
     if file then
-      local content = file:read("*a")
+      local content = file:read(50000) or ""
+      local is_truncated = false
+      if file:read(1) then is_truncated = true end
       file:close()
-      return "\n\n--- CONTENIDO DE " .. expanded .. " ---\n" .. content
+      local warning = is_truncated and "\n[WARNING: Archivo truncado a 50KB]\n" or ""
+      return "\n\n--- CONTENIDO DE " .. expanded .. " ---\n" .. content .. warning
     end
   end
   return ""
 end
+
+local _recent_file_cache = {}
 
 function M.get_recent_file_contents(files, current_index, max_files)
   local context = ""
@@ -94,14 +115,20 @@ function M.get_recent_file_contents(files, current_index, max_files)
   local approved_files = {}
   
   for i = start_idx, current_index - 1 do
-    local filepath = vim.fn.getcwd() .. "/" .. files[i]
-    local file = io.open(filepath, "r")
-    if file then
-      local content = file:read("*a")
-      file:close()
-      table.insert(approved_files, "### [ARCHIVO APROBADO PREVIAMENTE] " .. files[i] .. "\n```\n" .. content .. "\n```\n")
+    local cache_key = files[i]
+    if _recent_file_cache[cache_key] then
+      table.insert(approved_files, "### [ARCHIVO APROBADO PREVIAMENTE] " .. files[i] .. "\n```\n" .. _recent_file_cache[cache_key] .. "\n```\n")
     else
-      table.insert(approved_files, "### [ARCHIVO APROBADO PREVIAMENTE] " .. files[i] .. "\n(Contenido no disponible en disco)\n")
+      local filepath = vim.fn.getcwd() .. "/" .. files[i]
+      local file = io.open(filepath, "r")
+      if file then
+        local content = file:read("*a")
+        file:close()
+        _recent_file_cache[cache_key] = content
+        table.insert(approved_files, "### [ARCHIVO APROBADO PREVIAMENTE] " .. files[i] .. "\n```\n" .. content .. "\n```\n")
+      else
+        table.insert(approved_files, "### [ARCHIVO APROBADO PREVIAMENTE] " .. files[i] .. "\n(Contenido no disponible en disco)\n")
+      end
     end
   end
   

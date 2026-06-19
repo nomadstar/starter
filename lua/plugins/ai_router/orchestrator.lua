@@ -6,17 +6,52 @@ local api = require("plugins.ai_router.api")
 local relay = require("plugins.ai_router.relay")
 
 function M.start_orchestration()
-  vim.api.nvim_create_user_command("AiRouterKill", function()
-    require("plugins.ai_router.api").kill_all()
-    require("plugins.ai_router.ui").log("\n> 💀 **[Sistema]** Ejecución abortada localmente (AiRouterKill).")
-  end, {})
-  
-  vim.api.nvim_create_user_command("AiRouterToggle", function()
-    require("plugins.ai_router.ui").toggle_floating_window()
-  end, {})
+  if not _G.AI_ROUTER_COMMANDS_REGISTERED then
+    vim.api.nvim_create_user_command("AiRouterKill", function()
+      require("plugins.ai_router.api").kill_all()
+      require("plugins.ai_router.ui").log("\n> 💀 **[Sistema]** Ejecución abortada localmente (AiRouterKill).")
+    end, {})
+    
+    vim.api.nvim_create_user_command("AiRouterToggle", function()
+      require("plugins.ai_router.ui").toggle_floating_window()
+    end, {})
+    _G.AI_ROUTER_COMMANDS_REGISTERED = true
+  end
 
   local buf, win = ui.create_floating_window()
 
+  local cwd = vim.fn.getcwd()
+  local resume_file = cwd .. "/.ai_router_resume.json"
+  if vim.fn.filereadable(resume_file) == 1 then
+    local f = io.open(resume_file, "r")
+    if f then
+      local data = f:read("*a")
+      f:close()
+      local ok, state = pcall(vim.json.decode, data)
+      if ok and state.chunk_index then
+         vim.ui.input({ prompt = "Hay una sesión pausada en el archivo " .. state.chunk_index .. ". ¿Reanudar? (y/n): " }, function(resp)
+            if resp and resp:lower() == "y" then
+               ui.log("\n> 🔄 **[Sistema]** Reanudando sesión desde el archivo " .. state.chunk_index .. "...")
+               telegram.start_background_monitor()
+               relay.process_chunk(state.chunk_index, state.files, state.arch_response, state.file_purposes, state.final_prompt, function()
+                 telegram.stop_background_monitor()
+                 utils.allow_sleep()
+                 ui.log("\n> 🎉 **[Orquestador] Tarea completamente finalizada.**")
+               end)
+            else
+               os.remove(resume_file)
+               M.start_new_orchestration()
+            end
+         end)
+         return
+      end
+    end
+  end
+  
+  M.start_new_orchestration()
+end
+
+function M.start_new_orchestration()
   vim.ui.input({ prompt = "Prompt para Arquitecto: " }, function(user_prompt)
     if not utils.is_valid_response(user_prompt) then
       vim.notify("Prompt cancelado o vacío", vim.log.levels.WARN)
@@ -131,7 +166,8 @@ function M.start_orchestration()
         ui.log("### 💾 Guardado en disco: `fast_track_output.txt`")
       end
 
-      local function execute_architecture(arch_response)
+      local execute_architecture -- Declarado en scope superior
+      execute_architecture = function(arch_response)
         ui.log("> **[Arquitecto] Plan generado:**\n" .. arch_response .. "\n---\n")
 
         local files = {}
