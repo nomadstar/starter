@@ -109,9 +109,12 @@ function M.start_attention_beeper()
   beep()
 
   return function()
+    if not is_running then return end
     is_running = false
-    timer:stop()
-    timer:close()
+    if not timer:is_closing() then
+      timer:stop()
+      timer:close()
+    end
   end
 end
 
