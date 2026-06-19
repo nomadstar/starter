@@ -61,10 +61,20 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
       .. ollama_context
   end
 
-  local function do_iteration(comments, previous_code, force_model)
+  local function do_iteration(comments, previous_code, best_model, worst_model, mentorship_advice)
     local local_models = utils.get_local_models()
-    if force_model then
-      local_models = { force_model }
+    if worst_model and best_model and worst_model ~= best_model then
+      local new_models = { worst_model, best_model }
+      for _, m in ipairs(local_models) do
+         if m ~= worst_model and m ~= best_model then table.insert(new_models, m) end
+      end
+      local_models = new_models
+    elseif best_model then
+      local new_models = { best_model }
+      for _, m in ipairs(local_models) do
+         if m ~= best_model then table.insert(new_models, m) end
+      end
+      local_models = new_models
     end
 
     local turn_count = 0
@@ -73,7 +83,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
     local current_code = previous_code
 
     local function trigger_finish()
-      M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, cloud_context, comments, local_models, function(next_action, patch, best_model, suggested_subtasks)
+      M.finish_relay(current_code, current_file, file_purposes, iter_count, max_iter, cloud_context, comments, local_models, function(next_action, patch, best_model_cb, suggested_subtasks, worst_model_cb, mentorship_advice_cb)
         vim.schedule(function()
             vim.cmd("redraw")
             local stop_beep = ui.start_attention_beeper()
@@ -115,7 +125,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
                 -- Treat human feedback as a retry constraint
                 iter_count = iter_count + 1
                 telegram.start_background_monitor()
-                do_iteration(feedback, current_code, nil)
+                do_iteration(feedback, current_code, nil, nil, nil)
               else
                 -- Human approved (Empty feedback or /approve)
                 if next_action == "next_chunk" then
@@ -135,7 +145,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
                   else
                     ui.log("\n---\n")
                     telegram.start_background_monitor()
-                    do_iteration(patch, current_code, best_model)
+                    do_iteration(patch, current_code, best_model_cb, worst_model_cb, mentorship_advice_cb)
                   end
                 end
               end
@@ -292,13 +302,17 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
           .. "You are a reviewer in the swarm consensus loop. Please review the CURRENT DRAFT and improve it, expand it, or fix issues.\n"
           .. "CURRENT DRAFT:\n```\n" .. (current_code or "") .. "\n```\n\n"
           .. "CRITICAL INSTRUCTION: You MUST ONLY output SEARCH/REPLACE blocks. Do NOT output the full document.\n"
-          .. "If you think the draft is perfect and needs no changes, output ABSOLUTELY NOTHING. Just return an empty response.\n"
+          .. "If the draft is perfect and needs no changes, output exactly: NO_CHANGES_NEEDED\n"
           .. "Format for patches:\n"
           .. "<<<<\n[exact original lines to replace]\n====\n[new improved lines]\n>>>>\n"
-          .. "Do NOT include any other text outside the blocks."
       end
 
-      ollama_prompt = ollama_prompt .. "\nAdd a comment somewhere in the code (using appropriate comment syntax): `# Esto lo hizo " .. current_model .. "` to sign your work."
+      if turn_count == 0 then
+        ollama_prompt = ollama_prompt .. "\nAdd a comment somewhere in the code (using appropriate comment syntax): `# Esto lo hizo " .. current_model .. "` to sign your work."
+        if mentorship_advice and mentorship_advice ~= "" then
+          ollama_prompt = ollama_prompt .. "\n\nMENTORSHIP ADVICE FROM ARCHITECT:\n" .. mentorship_advice .. "\nPlease learn from this advice and apply it to your new implementation."
+        end
+      end
 
       if vim.env.CAVEMAN_MODE == "true" and not is_docs_mode then
         ollama_prompt = ollama_prompt .. "\n\nCAVEMAN MODE: Output ONLY code. No chatter. Shortest possible fixes."
@@ -334,12 +348,15 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
             end
           end
 
-          if changed then
+          if code_response:match("NO_CHANGES_NEEDED") then
+            no_change_count = no_change_count + 1
+            ui.log("\n> 🤷 **[" .. current_model .. "]** Evaluó como perfecto (NO_CHANGES_NEEDED). (Consenso: " .. no_change_count .. "/" .. #local_models .. ")")
+          elseif changed then
             no_change_count = 0
             ui.log("\n> 🛠️ **[" .. current_model .. "]** Aplicó parches al documento.")
           else
             no_change_count = no_change_count + 1
-            ui.log("\n> 🤷 **[" .. current_model .. "]** No propuso cambios. (Consenso: " .. no_change_count .. "/" .. #local_models .. ")")
+            ui.log("\n> 🤷 **[" .. current_model .. "]** Falló al proponer cambios o alucinó. (Consenso: " .. no_change_count .. "/" .. #local_models .. ")")
           end
         end
 
@@ -352,7 +369,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
     run_next_model()
   end
 
-  do_iteration(nil, nil)
+  do_iteration(nil, nil, nil, nil, nil)
 end
 
 function M.finish_relay(final_code, current_file, file_purposes, iter_count, max_iter, approved_context, comments, local_models, callback)
@@ -396,7 +413,7 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
     end
 
     local model_list_str = table.concat(local_models, ", ")
-    review_prompt = review_prompt .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": [\"list of fixes if any\"],\n  \"cooperation_notes\": \"notas breves sobre como colaboraron los modelos locales\",\n  \"cooperation_scores\": \"model1=80, model2=90\",\n  \"suggested_subtasks\": [{\"file\": \"path/to/new_file.md\", \"purpose\": \"reason for creation\"}]\n}\nIMPORTANT: Use the ACTUAL model names that participated (" .. model_list_str .. ") in the cooperation_scores string. If the code introduces concepts that are too dense and deserve their own dedicated file, propose them in suggested_subtasks (can be empty). If the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. If it has major bugs, give < 80. The score MUST be a NUMERIC INTEGER."
+    review_prompt = review_prompt .. "\n\nYou MUST reply with a raw JSON object and nothing else. Format:\n{\n  \"score\": 100,\n  \"fixes\": [\"list of fixes if any\"],\n  \"cooperation_notes\": \"notas breves sobre como colaboraron los modelos locales\",\n  \"cooperation_scores\": \"model1=80, model2=90\",\n  \"best_model\": \"name of the best local model\",\n  \"praise\": \"positive reinforcement and praise for the best model\",\n  \"worst_model\": \"name of the worst local model\",\n  \"mentorship_advice\": \"teaching advice for the worst model on how to improve\",\n  \"suggested_subtasks\": [{\"file\": \"path/to/new_file.md\", \"purpose\": \"reason for creation\"}]\n}\nIMPORTANT: Use the ACTUAL model names that participated (" .. model_list_str .. ") in the cooperation_scores, best_model, and worst_model strings. If the code works perfectly, give a score of 90 to 100. If it has minor bugs, give 80 to 89. The score MUST be a NUMERIC INTEGER."
 
     if vim.env.CAVEMAN_MODE == "true" then
       review_prompt = review_prompt .. "\n\nCAVEMAN MODE: Output ONLY the raw JSON object. No markdown formatting, no explanations."
@@ -410,12 +427,20 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
       local fixes = review_response
       local coop_notes = ""
       local coop_scores = ""
+      local best_model = ""
+      local praise = ""
+      local worst_model = ""
+      local mentorship_advice = ""
       local suggested_subtasks = {}
       if ok2 and type(data2) == "table" then
         score = tonumber(data2.score) or 0
         fixes = data2.fixes or "Unknown error"
         coop_notes = data2.cooperation_notes or ""
         coop_scores = data2.cooperation_scores or ""
+        best_model = data2.best_model or ""
+        praise = data2.praise or ""
+        worst_model = data2.worst_model or ""
+        mentorship_advice = data2.mentorship_advice or ""
         if type(data2.suggested_subtasks) == "table" then
           suggested_subtasks = data2.suggested_subtasks
         end
@@ -430,13 +455,22 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
 
       if coop_notes ~= "" then ui.log("> 🤝 **[Cooperación]** Notas: " .. coop_notes) end
       if coop_scores ~= "" then ui.log("> 📊 **[Cooperación]** Puntajes: " .. coop_scores) end
+      if best_model ~= "" and praise ~= "" then
+         ui.log("\n> 🌟 **[Arquitecto]** Elogio para " .. best_model .. ": " .. praise)
+      end
+      if worst_model ~= "" and mentorship_advice ~= "" then
+         ui.log("> 👨‍🏫 **[Arquitecto]** Consejo de Mentoría para " .. worst_model .. ": " .. mentorship_advice)
+      end
+      
+      -- Default best model to the last one if not provided, just in case
+      if best_model == "" then best_model = local_models[#local_models] end
 
       if score >= 90 then
         ui.log("### ✅ [Arquitecto] Archivo `" .. current_file .. "` APROBADO (Score: " .. score .. ") en iteración " .. iter_count .. "!")
         if utils.save_file_native(current_file, final_code) then
            ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
         end
-        callback("next_chunk", final_code, nil, suggested_subtasks)
+        callback("next_chunk", final_code, best_model, suggested_subtasks, worst_model, mentorship_advice)
       elseif score >= 80 then
         ui.log("### 🩹 [Arquitecto] Errores menores en " .. current_file .. " (Score: " .. score .. "). Delegando parche a Cloud Developer...")
         local patch_prompt = "You are a Developer. The code below has these minor issues:\n"
@@ -462,7 +496,7 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
           is_cloud_working = false
           if patch_response:match("^ERROR") then
             ui.log("\n> ⚠️ **[Sistema]** Falló el parche en la nube. Forzando iteración local...")
-            callback("retry", fixes, nil)
+            callback("retry", fixes, best_model, suggested_subtasks, worst_model, mentorship_advice)
             return
           end
 
@@ -472,27 +506,18 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
           if utils.save_file_native(current_file, patched_code) then
              ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
           end
-          callback("next_chunk", patched_code, nil, suggested_subtasks)
+          callback("next_chunk", patched_code, best_model, suggested_subtasks, worst_model, mentorship_advice)
         end)
       else
-        local best_model = nil
-        if coop_scores ~= "" then
-          local max_coop = -1
-          for m, s in coop_scores:gmatch("([%w%-_]+)%s*=%s*(%d+)") do
-            local iscore = tonumber(s)
-            if iscore and iscore > max_coop then
-              max_coop = iscore
-              best_model = m
-            end
-          end
-        end
-        
         ui.log("### ❌ [Arquitecto] Revisión fallida para " .. current_file .. " (Score: " .. score .. "). Comentarios:\n" .. fixes)
-        if best_model then
-          ui.log("> 👑 El modelo **" .. best_model .. "** obtuvo el mejor puntaje de cooperación y liderará el parcheo.")
+        if worst_model ~= "" and best_model ~= "" and worst_model ~= best_model then
+          ui.log("> 🧑‍🎓 El modelo **" .. worst_model .. "** intentará redimirse escribiendo el próximo borrador.")
+          ui.log("> 👨‍🏫 El modelo **" .. best_model .. "** (Mejor puntaje) asumirá como su Maestro en el turno 2.")
+        elseif best_model ~= "" then
+          ui.log("> 👑 El modelo **" .. best_model .. "** liderará el parcheo de este archivo.")
         end
 
-        callback("retry", fixes, best_model, suggested_subtasks)
+        callback("retry", fixes, best_model, suggested_subtasks, worst_model, mentorship_advice)
       end
     end
 

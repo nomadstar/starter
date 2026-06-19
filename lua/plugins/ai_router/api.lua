@@ -148,12 +148,16 @@ function M.call_ollama(model, prompt, callback)
       options = {
         num_predict = tonumber(utils.get_env("AGENT_LOCAL_MAX_PREDICT", "4096")),
         num_ctx = tonumber(utils.get_env("AGENT_LOCAL_MAX_CTX", "16384")),
+        repeat_penalty = 1.15,
+        top_k = 40,
+        top_p = 0.9,
       },
     })
 
     if _G.AI_ROUTER_KILLED then return callback("ERROR: Killed") end
 
-    local job = curl.post(url, {
+    local job = nil
+    job = curl.post(url, {
       body = body,
       headers = { ["Content-Type"] = "application/json" },
       stream = function(err, data)
@@ -167,6 +171,20 @@ function M.call_ollama(model, prompt, callback)
               if ok and json.message and json.message.content then
                 accumulated_text = accumulated_text .. json.message.content
                 require("plugins.ai_router.ui").log_stream(json.message.content)
+                
+                -- Short-circuit hallucination loop for reviewers
+                if #accumulated_text > 400 then
+                   local has_code = accumulated_text:match("```")
+                   local has_patch = accumulated_text:match("<<<<")
+                   local has_no_changes = accumulated_text:match("NO_CHANGES_NEEDED")
+                   
+                   if not has_code and not has_patch and not has_no_changes then
+                      require("plugins.ai_router.ui").log_stream("\n> ⚠️ **[Sistema]** Abortando generación temprana por posible alucinación (no hay comandos válidos)...")
+                      if job then pcall(function() job:shutdown() end) end
+                      return
+                   end
+                end
+
                  if json.done and json.done_reason == "length" then
                    if continuation_count < max_continuations then
                      continuation_count = continuation_count + 1
