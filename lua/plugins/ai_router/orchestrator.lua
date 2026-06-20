@@ -141,9 +141,20 @@ function M.start_new_orchestration()
 
       ui.log("> **[Arquitecto Cloud]** Analizando petición para minimizar tokens...\n")
 
+      local state_context = ""
+      if vim.fn.filereadable(vim.fn.getcwd() .. "/.ai_router_state.md") == 1 then
+        local sf = io.open(vim.fn.getcwd() .. "/.ai_router_state.md", "r")
+        if sf then
+          local content = sf:read("*a")
+          sf:close()
+          state_context = "\n\nCURRENT PROJECT STATE:\n" .. content .. "\n"
+        end
+      end
+
       local architecture_prompt = "You are an Expert AI Software Architect.\n"
         .. "Analyze this request:\n"
         .. final_prompt
+        .. state_context
         .. "\n\nDECIDE THE BEST APPROACH:\n"
         .. "If the request is simple and can be done in 1 file with < 100 lines: Output EXACTLY this:\n"
         .. "MODE: FAST\n"
@@ -227,8 +238,19 @@ function M.start_new_orchestration()
                 .. "   [FILE] path/to/file | {one-line purpose}\n\n"
                 .. "Failure to use the [FILE] format will break the system. NEVER output filenames in a different format."
 
+              local state_context = ""
+              if vim.fn.filereadable(vim.fn.getcwd() .. "/.ai_router_state.md") == 1 then
+                local sf = io.open(vim.fn.getcwd() .. "/.ai_router_state.md", "r")
+                if sf then
+                  state_context = "\n\nCURRENT PROJECT STATE:\n" .. (sf:read("*a") or "") .. "\n"
+                  sf:close()
+                end
+              end
+
               local revision_prompt = "You are an AI Architect. Here is your previous plan:\n"
                 .. arch_response
+                .. "\n\nOriginal Goal:\n" .. final_prompt
+                .. state_context
                 .. "\n\nThe user provided this feedback: "
                 .. feedback
                 .. "\n\nPlease revise the plan accordingly. Provide ONLY the revised concise technical plan and pseudocode."

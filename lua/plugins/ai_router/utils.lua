@@ -170,4 +170,11 @@ end
 
 
 
+function M.is_midnight_monster_active()
+  if M.get_env("MIDNIGHT_MONSTER", "false") ~= "true" then return false end
+  local current_hour = tonumber(os.date("%H"))
+  -- Active from 22:00 to 07:59
+  return current_hour >= 22 or current_hour < 8
+end
+
 return M

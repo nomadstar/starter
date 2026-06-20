@@ -182,6 +182,60 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
             end
 
             ask_human_approval = function()
+              if require("plugins.ai_router.utils").is_midnight_monster_active() then
+                ui.log("\n> 🌕 **[MidnightMonster]** Activo. Evadiendo Director Humano y delegando aprobación al Arquitecto...")
+                telegram.start_background_monitor()
+                
+                local state_context = ""
+                if vim.fn.filereadable(vim.fn.getcwd() .. "/.ai_router_state.md") == 1 then
+                  local sf = io.open(vim.fn.getcwd() .. "/.ai_router_state.md", "r")
+                  if sf then
+                    state_context = "\n\nCURRENT PROJECT STATE:\n" .. (sf:read("*a") or "") .. "\n"
+                    sf:close()
+                  end
+                end
+
+                local mm_prompt = "You are the MidnightMonster Architect. The local AI generated this file to fulfill the goal.\n\n"
+                  .. "ORIGINAL GOAL:\n" .. final_prompt .. "\n"
+                  .. state_context .. "\n"
+                  .. "CURRENT FILE: " .. current_file .. "\n"
+                  .. "PURPOSE: " .. (file_purposes[current_file] or "N/A") .. "\n\n"
+                  .. "GENERATED CODE:\n```\n" .. (patch or "") .. "\n```\n\n"
+                  .. "Evaluate if this code fulfills the purpose adequately. "
+                  .. "If it is good enough to proceed, reply EXACTLY with '[APPROVED]'. "
+                  .. "If it has severe bugs, omissions or hallucinations, reply EXACTLY with '[REJECTED: reason]'."
+                
+                local best_provider = require("plugins.ai_router.metrics").get_best_provider()
+                local api_call = best_provider == "ollama" and require("plugins.ai_router.api").call_ollama or require("plugins.ai_router.api").call_cloud
+                local model_arg = best_provider == "ollama" and require("plugins.ai_router.utils").get_local_models()[1] or mm_prompt
+                local prompt_arg = best_provider == "ollama" and mm_prompt or function(ans)
+                  telegram.stop_background_monitor()
+                  ui.log("\n> ☁️ **[Arquitecto Evaluador]**:\n" .. ans .. "\n")
+                  if ans:match("%[APPROVED%]") then
+                    process_human_feedback("/approve", false)
+                  else
+                    local reason = ans:match("%[REJECTED:%s*(.-)%]") or ans
+                    process_human_feedback(reason, false)
+                  end
+                end
+                
+                if best_provider == "ollama" then
+                   api_call(model_arg, prompt_arg, function(ans)
+                     telegram.stop_background_monitor()
+                     ui.log("\n> 🏠 **[Arquitecto Local Evaluador]**:\n" .. ans .. "\n")
+                     if ans:match("%[APPROVED%]") then
+                       process_human_feedback("/approve", false)
+                     else
+                       local reason = ans:match("%[REJECTED:%s*(.-)%]") or ans
+                       process_human_feedback(reason, false)
+                     end
+                   end)
+                else
+                   api_call(model_arg, prompt_arg)
+                end
+                return
+              end
+
               local prompt_msg = "¿Aprobar " .. current_file .. "? (Vacío=SI, Texto=Corregir, /q=Duda): "
               if next_action == "retry" then
                 prompt_msg = "Reescribir " .. current_file .. " (Vacío=Permitir, Texto=Añadir feedback, /q=Duda): "
@@ -252,6 +306,61 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
             end
 
             ask_subtasks_approval = function(subtasks)
+              if require("plugins.ai_router.utils").is_midnight_monster_active() then
+                ui.log("\n> 🌕 **[MidnightMonster]** Activo. Delegando aprobación de subtareas al Arquitecto...")
+                telegram.start_background_monitor()
+
+                local state_context = ""
+                if vim.fn.filereadable(vim.fn.getcwd() .. "/.ai_router_state.md") == 1 then
+                  local sf = io.open(vim.fn.getcwd() .. "/.ai_router_state.md", "r")
+                  if sf then
+                    state_context = "\n\nCURRENT PROJECT STATE:\n" .. (sf:read("*a") or "") .. "\n"
+                    sf:close()
+                  end
+                end
+
+                local subtasks_list = ""
+                for _, st in ipairs(subtasks) do
+                  subtasks_list = subtasks_list .. "- " .. (st.file or "Unknown") .. ": " .. (st.purpose or "") .. "\n"
+                end
+
+                local mm_prompt = "You are the MidnightMonster Architect. The local AI suggested adding these new files to the queue.\n\n"
+                  .. "ORIGINAL GOAL:\n" .. final_prompt .. "\n"
+                  .. state_context .. "\n"
+                  .. "SUGGESTED SUBTASKS:\n" .. subtasks_list .. "\n\n"
+                  .. "Are these new files strictly necessary and correct to fulfill the goal? "
+                  .. "If yes, reply EXACTLY with '[APPROVED]'. "
+                  .. "If no (they are unnecessary or hallucinated), reply EXACTLY with '[REJECTED: reason]'."
+                
+                local best_provider = require("plugins.ai_router.metrics").get_best_provider()
+                local api_call = best_provider == "ollama" and require("plugins.ai_router.api").call_ollama or require("plugins.ai_router.api").call_cloud
+                local model_arg = best_provider == "ollama" and require("plugins.ai_router.utils").get_local_models()[1] or mm_prompt
+                local prompt_arg = best_provider == "ollama" and mm_prompt or function(ans)
+                  telegram.stop_background_monitor()
+                  ui.log("\n> ☁️ **[Arquitecto Evaluador]**:\n" .. ans .. "\n")
+                  if ans:match("%[APPROVED%]") then
+                    process_subtasks_feedback("", false, subtasks)
+                  else
+                    process_subtasks_feedback("No", false, subtasks)
+                  end
+                end
+
+                if best_provider == "ollama" then
+                   api_call(model_arg, prompt_arg, function(ans)
+                     telegram.stop_background_monitor()
+                     ui.log("\n> 🏠 **[Arquitecto Local Evaluador]**:\n" .. ans .. "\n")
+                     if ans:match("%[APPROVED%]") then
+                       process_subtasks_feedback("", false, subtasks)
+                     else
+                       process_subtasks_feedback("No", false, subtasks)
+                     end
+                   end)
+                else
+                   api_call(model_arg, prompt_arg)
+                end
+                return
+              end
+
               local prompt_msg = "¿Añadir " .. #subtasks .. " nuevas tareas? (Vacío=SI, No=Descartar, /q=Duda): "
               
               telegram.stop_background_monitor()
