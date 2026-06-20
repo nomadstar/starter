@@ -163,9 +163,10 @@ function M.start_new_orchestration()
         .. "MODE: DOCS\n"
         .. "[FILE] path/to/doc.md | {description of document}\n\n"
         .. "Otherwise, output a strict execution plan like this:\n"
-        .. "[FILE] path/to/file1.lua | {one-line purpose}\n"
-        .. "[FILE] path/to/file2.rs | {one-line purpose}\n"
-        .. "\nFailure to format as [FILE] path | purpose will BREAK the downstream parser."
+        .. "[FILE] path/to/file1.lua | 150 | {one-line purpose}\n"
+        .. "[FILE] path/to/file2.rs | 500 | {one-line purpose}\n"
+        .. "Where the middle column is an integer estimating the MAXIMUM lines of code/text the file will contain.\n"
+        .. "\nFailure to format as [FILE] path | max_lines | purpose will BREAK the downstream parser."
 
       if vim.env.CAVEMAN_MODE == "true" then
         architecture_prompt = architecture_prompt .. "\n\nCAVEMAN MODE: Do NOT add greetings, summaries, or Markdown headings. ONLY output the [FILE] lines."
@@ -187,7 +188,10 @@ function M.start_new_orchestration()
         local file_purposes = {}
 
         for line in arch_response:gmatch("[^\r\n]+") do
-          local file_path, purpose = line:match("%[FILE%]%s*([^|]+)%|%s*(.+)")
+          local file_path, max_lines_str, purpose = line:match("%[FILE%]%s*([^|]+)%|%s*(%d+)%s*%|%s*(.+)")
+          if not file_path then
+            file_path, purpose = line:match("%[FILE%]%s*([^|]+)%|%s*(.+)")
+          end
           if file_path and purpose then
             file_path = vim.trim(file_path)
             table.insert(files, file_path)
@@ -237,7 +241,7 @@ function M.start_new_orchestration()
 
               local format_rules = "\n\nSTRICT RULES FOR OUTPUT:\n"
                 .. "Produce a minimal plan ending with a list of files to generate in this EXACT format:\n"
-                .. "   [FILE] path/to/file | {one-line purpose}\n\n"
+                .. "   [FILE] path/to/file | {max_lines} | {one-line purpose}\n\n"
                 .. "Failure to use the [FILE] format will break the system. NEVER output filenames in a different format."
 
               local state_context = ""

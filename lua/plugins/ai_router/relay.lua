@@ -51,6 +51,22 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
   local is_docs_mode = arch_response:match("^[Mm][Oo][Dd][Ee]:%s*[Dd][Oo][Cc][Ss]") ~= nil
 
   local current_purpose = file_purposes[current_file] or "General implementation"
+  
+  local max_lines_estimate = nil
+  for line in arch_response:gmatch("[^\r\n]+") do
+      local fp, ml = line:match("%[FILE%]%s*([^|]+)%|%s*(%d+)%s*%|")
+      if fp and vim.trim(fp) == current_file then
+          max_lines_estimate = tonumber(ml)
+          break
+      end
+  end
+  
+  -- Add a generous buffer to the architect's estimate
+  local max_lines_limit = nil
+  if max_lines_estimate then
+      max_lines_limit = math.floor(max_lines_estimate * 1.5) + 100
+  end
+
   local base_prompt = ""
 
   if is_docs_mode then
@@ -454,6 +470,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
         ollama_prompt = ollama_prompt .. "\n\nCAVEMAN MODE: Output ONLY code. No chatter. Shortest possible fixes."
       end
 
+      local call_opts = { max_lines = max_lines_limit }
       api.call_ollama(current_model, ollama_prompt, function(code_response)
         if code_response:match("^ERROR") then
           ui.log("> ⚠️ **[Sistema]** Error (" .. code_response .. "). Saltando modelo...")
@@ -518,7 +535,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
         end
         model_idx = model_idx + 1
         run_next_model()
-      end)
+      end, call_opts)
     end
 
     run_next_model()

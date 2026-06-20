@@ -219,6 +219,17 @@ function M.call_ollama(model, prompt, callback, opts)
                 accumulated_text = accumulated_text .. json.message.content
                 require("plugins.ai_router.ui").log_stream(json.message.content)
                 
+                if opts.max_lines then
+                   local current_lines = select(2, accumulated_text:gsub('\n', '\n')) + 1
+                   if current_lines > opts.max_lines then
+                      is_aborted = true
+                      require("plugins.ai_router.ui").log_stream("\n> ⚠️ **[Sistema]** Abortando (Límite de líneas estimado superado: " .. current_lines .. " > " .. opts.max_lines .. ")...\n")
+                      if job then pcall(function() job:shutdown() end) end
+                      callback("ERROR: Exceeded Max Lines")
+                      return
+                   end
+                end
+                
                 -- Short-circuit hallucination loop
                 local is_first_dev = prompt:match("FIRST developer")
                 local is_reviewer = prompt:match("You are a reviewer")
