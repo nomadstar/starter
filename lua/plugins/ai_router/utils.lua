@@ -49,6 +49,13 @@ function M.save_file_native(filename, content)
   end
 end
 
+local function sanitize_context(text)
+  if not text then return "" end
+  local s = text:gsub("%[APPROVED%]", "[A_P_P_R_O_V_E_D]")
+  s = s:gsub("%[REJECTED", "[R_E_J_E_C_T_E_D")
+  return s
+end
+
 function M.jina_fetch(url, callback)
   local jina_url = "https://r.jina.ai/" .. url
   require("plenary.curl").get(jina_url, {
@@ -57,7 +64,7 @@ function M.jina_fetch(url, callback)
     },
     callback = function(res)
       if res.status == 200 then
-        callback(res.body)
+        callback(sanitize_context(res.body))
       else
         callback("ERROR Jina fetch: " .. res.status .. " " .. (res.body or ""))
       end
@@ -102,7 +109,7 @@ function M.read_local_context(path)
       if file:read(1) then is_truncated = true end
       file:close()
       local warning = is_truncated and "\n[WARNING: Archivo truncado a 50KB]\n" or ""
-      return "\n\n--- CONTENIDO DE " .. expanded .. " ---\n" .. content .. warning
+      return sanitize_context("\n\n--- CONTENIDO DE " .. expanded .. " ---\n" .. content .. warning)
     end
   end
   return ""

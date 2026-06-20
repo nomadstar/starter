@@ -21,6 +21,19 @@ function M.call_cloud(prompt, callback, opts)
   local url = utils.get_env("AGENT_CLOUD_URL", "https://openrouter.ai/api/v1/chat/completions")
   local key = utils.get_env("OPENROUTER_API_KEY", "")
   local model_env = utils.get_env("AGENT_CLOUD_MODEL", "meta-llama/llama-3-8b-instruct")
+
+  if utils.is_midnight_monster_active() then
+    model_env = utils.get_env("AGENT_NIGHTLY_FREE_MODELS", "")
+    if model_env == "" then
+      vim.schedule(function()
+        ui.log("\n> 🛑 **[Seguridad]** MidnightMonster activo pero no hay AGENT_NIGHTLY_FREE_MODELS definidos. Apagando sistema por seguridad (costo).")
+        M.kill_all()
+        callback("ERROR: No free models available for nightly mode")
+      end)
+      return
+    end
+  end
+
   local models = vim.split(model_env, ",")
 
   if key == "" then
@@ -85,6 +98,10 @@ function M.call_cloud(prompt, callback, opts)
             end)
           else
             vim.schedule(function()
+              if utils.is_midnight_monster_active() then
+                ui.log("\n> 🛑 **[Seguridad]** Todos los modelos nocturnos gratuitos fallaron. Apagando sistema (sin fallback local).")
+                M.kill_all()
+              end
               callback("ERROR Cloud (" .. current_model .. "): " .. tostring(res.status) .. " " .. tostring(res.body))
             end)
           end

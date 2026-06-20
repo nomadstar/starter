@@ -158,6 +158,7 @@ function M.process_chunk(chunk_index, files, arch_response, file_purposes, final
                     if patch and vim.trim(patch) ~= "" then
                       if utils.save_file_native(current_file, patch) then
                          ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
+                         require("plugins.ai_router.git_safety").commit_nightly(current_file, file_purposes[current_file] or "Max iter reached")
                       end
                     else
                       ui.log("### ⏭️ Documento vacío. Saltando guardado.")
@@ -633,6 +634,7 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
         else
           if utils.save_file_native(current_file, final_code) then
             ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
+            require("plugins.ai_router.git_safety").commit_nightly(current_file, file_purposes[current_file] or "Auto-approved")
           end
         end
         callback("next_chunk", final_code, best_model, suggested_subtasks, worst_model, mentorship_advice, is_identical)
@@ -660,6 +662,7 @@ function M.finish_relay(final_code, current_file, file_purposes, iter_count, max
           else
             if utils.save_file_native(current_file, patched_code) then
               ui.log("### 💾 Guardado en disco: `" .. current_file .. "`")
+              require("plugins.ai_router.git_safety").commit_nightly(current_file, file_purposes[current_file] or "Patched auto-approval")
             end
           end
           callback("next_chunk", patched_code, best_model, suggested_subtasks, worst_model, mentorship_advice, is_identical)

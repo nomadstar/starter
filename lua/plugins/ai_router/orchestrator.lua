@@ -173,8 +173,10 @@ function M.start_new_orchestration()
 
       local function start_fast_track(arch_response)
         local code = arch_response:match("CODE:%s*```[%w]*\n(.-)```") or arch_response
-        utils.save_file_native("fast_track_output.txt", code)
-        ui.log("### 💾 Guardado en disco: `fast_track_output.txt`")
+        if utils.save_file_native("fast_track_output.txt", code) then
+          ui.log("### 💾 Guardado en disco: `fast_track_output.txt`")
+          require("plugins.ai_router.git_safety").commit_nightly("fast_track_output.txt", "Fast track execution")
+        end
       end
 
       local execute_architecture -- Declarado en scope superior

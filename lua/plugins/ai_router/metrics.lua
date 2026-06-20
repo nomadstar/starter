@@ -10,6 +10,9 @@ local state = {
   }
 }
 
+local session_tokens = 0
+local budget_killed = false
+
 function M.get_best_provider()
   local mode = vim.env.AI_ROUTER_MODE or "4"
   if mode == "2" then return "ollama" end
@@ -36,7 +39,19 @@ function M.get_best_provider()
 end
 
 function M.add_usage(provider, tokens)
-  -- Ya no hacemos tracking en disco ni cálculo de tokens para rate limits
+  if budget_killed then return end
+  if not tokens then return end
+  
+  session_tokens = session_tokens + tonumber(tokens)
+  local budget_str = require("plugins.ai_router.utils").get_env("AGENT_TOKEN_BUDGET", "")
+  if budget_str ~= "" then
+    local budget = tonumber(budget_str)
+    if budget and session_tokens > budget then
+      budget_killed = true
+      require("plugins.ai_router.ui").log("\n> 🛑 **[Seguridad]** Presupuesto de tokens excedido (" .. session_tokens .. " > " .. budget .. "). Apagando sistema.")
+      require("plugins.ai_router.api").kill_all()
+    end
+  end
 end
 
 function M.report_failure(provider)
