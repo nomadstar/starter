@@ -90,6 +90,9 @@ function M.read_local_context(path)
         context = context .. content
       end
     end
+    if count == 0 then
+      return "\n\n--- CONTENIDO DE CARPETA " .. expanded .. " ---\n[La carpeta está vacía o sin archivos válidos]\n"
+    end
     return context
   elseif vim.fn.filereadable(expanded) == 1 then
     local file = io.open(expanded, "r")
