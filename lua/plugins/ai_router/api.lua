@@ -16,7 +16,8 @@ function M.kill_all()
   _G.AI_ROUTER_ACTIVE_JOBS = {}
 end
 
-function M.call_cloud(prompt, callback)
+function M.call_cloud(prompt, callback, opts)
+  opts = opts or {}
   local url = utils.get_env("AGENT_CLOUD_URL", "https://openrouter.ai/api/v1/chat/completions")
   local key = utils.get_env("OPENROUTER_API_KEY", "")
   local model_env = utils.get_env("AGENT_CLOUD_MODEL", "meta-llama/llama-3-8b-instruct")
@@ -29,12 +30,15 @@ function M.call_cloud(prompt, callback)
     return
   end
 
-  local system_prompt = "You are a helpful AI."
-  local anti_lazy = "CRITICAL: You are an autonomous system. Do NOT use placeholders, comments like 'rest of code here', or summaries. You MUST write the ENTIRE implementation for ALL requested files. Skipping code will break the deployment."
-  system_prompt = system_prompt .. "\n" .. anti_lazy
+  local system_prompt = opts.system_prompt or "You are a helpful AI."
+  
+  if not opts.system_prompt then
+    local anti_lazy = "CRITICAL: You are an autonomous system. Do NOT use placeholders, comments like 'rest of code here', or summaries. You MUST write the ENTIRE implementation for ALL requested files. Skipping code will break the deployment."
+    system_prompt = system_prompt .. "\n" .. anti_lazy
 
-  if vim.env.CAVEMAN_MODE == "true" then
-    system_prompt = "Talk like caveman. Cut filler words. Use minimal grammar. Keep technical accuracy. Shortest possible output.\n" .. anti_lazy
+    if vim.env.CAVEMAN_MODE == "true" then
+      system_prompt = "Talk like caveman. Cut filler words. Use minimal grammar. Keep technical accuracy. Shortest possible output.\n" .. anti_lazy
+    end
   end
 
   local function try_model(index)
@@ -133,12 +137,18 @@ function M.call_cloud(prompt, callback)
   try_model(1)
 end
 
-function M.call_ollama(model, prompt, callback)
+function M.call_ollama(model, prompt, callback, opts)
+  opts = opts or {}
   local url = utils.get_env("OLLAMA_HOST", "http://localhost:11434") .. "/api/chat"
 
   local system_prompt = "You are an Expert Senior Developer. Your task is to write exhaustive, production-grade, and deeply detailed code/documentation."
   local anti_lazy = "CRITICAL: You are an autonomous system. Do NOT use placeholders, comments like 'rest of code here', or summaries. You MUST write the ENTIRE implementation for ALL requested files. Skipping code will break the deployment."
-  system_prompt = system_prompt .. "\n" .. anti_lazy
+  
+  if opts.system_prompt then
+    system_prompt = opts.system_prompt
+  else
+    system_prompt = system_prompt .. "\n" .. anti_lazy
+  end
 
   local messages = {
     { role = "system", content = system_prompt },
@@ -194,6 +204,7 @@ function M.call_ollama(model, prompt, callback)
                 
                 -- Short-circuit hallucination loop
                 local is_first_dev = prompt:match("FIRST developer")
+                local is_reviewer = prompt:match("You are a reviewer")
                 
                 if not is_aborted then
                    if is_first_dev then
@@ -207,7 +218,7 @@ function M.call_ollama(model, prompt, callback)
                             return
                          end
                       end
-                   else
+                   elseif is_reviewer then
                       if #accumulated_text > 400 then
                          local has_patch = accumulated_text:match("<<<<")
                          local has_no_changes = accumulated_text:match("NO_CHANGES_NEEDED")

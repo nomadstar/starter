@@ -238,6 +238,8 @@ function M.start_new_orchestration()
                 revision_prompt = revision_prompt .. "\n\nCAVEMAN MODE: Output ONLY the updated technical plan. No apologies, no introductions. Shortest possible output."
               end
 
+              local arch_opts = { system_prompt = "You are an Expert AI Software Architect. Ensure your output exactly follows the formatting rules requested, without extra conversational text." }
+
               api.call_cloud(revision_prompt, function(revised_response)
                 if revised_response:match("^ERROR") then
                   ui.log(revised_response)
@@ -248,11 +250,11 @@ function M.start_new_orchestration()
                       return
                     end
                     execute_architecture(fallback_rev)
-                  end)
+                  end, arch_opts)
                   return
                 end
                 execute_architecture(revised_response)
-              end)
+              end, arch_opts)
             else
               if arch_response:match("^[Mm][Oo][Dd][Ee]:%s*[Ff][Aa][Ss][Tt]") then
                 ui.log("> ⚡ **[Fast Track]** Tarea simple detectada. Guardando archivo(s) nativamente...\n")
@@ -281,6 +283,8 @@ function M.start_new_orchestration()
         end)
       end
 
+      local arch_opts = { system_prompt = "You are an Expert AI Software Architect. Evaluate the user's request and provide a strict execution plan with exactly the [FILE] format requested. Do NOT output code implementation, only the file list and plan." }
+
       local best_provider = require("plugins.ai_router.metrics").get_best_provider()
       if best_provider == "ollama" then
         ui.log("\n> 🏠 **[Sistema]** Modo Local Activo. Llamando Arquitecto en Ollama...\n")
@@ -290,7 +294,7 @@ function M.start_new_orchestration()
             return
           end
           execute_architecture(fallback_arch)
-        end)
+        end, arch_opts)
       else
         api.call_cloud(architecture_prompt, function(arch_response)
           if arch_response:match("^ERROR") then
@@ -302,11 +306,11 @@ function M.start_new_orchestration()
                 return
               end
               execute_architecture(fallback_arch)
-            end)
+            end, arch_opts)
             return
           end
           execute_architecture(arch_response)
-        end)
+        end, arch_opts)
       end
     end)
   end)
