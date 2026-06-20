@@ -88,6 +88,13 @@ local function run_poll_loop(mode_id, start_time, on_reply_cb, on_kill_cb)
                         M.send_message("❌ Error: '" .. file_path .. "' no es un archivo válido o es una carpeta completa.")
                       end
                     end
+                  elseif text:match("^/q ") or text:match("^/question ") then
+                    local question = text:gsub("^/question%s*", ""):gsub("^/q%s*", "")
+                    require("plugins.ai_router.ui").log("\n> 🗣️ **[Telegram -> Arquitecto]**: " .. question)
+                    local q_prompt = "You are the Cloud Architect. The user asks a question while Ollama is working:\n\nUSER QUESTION:\n" .. question
+                    require("plugins.ai_router.api").call_cloud(q_prompt, function(ans)
+                       require("plugins.ai_router.ui").log("\n> ☁️ **[Arquitecto Responde]**:\n" .. ans .. "\n")
+                    end)
                   elseif text == "/kill" then
                     polling_mode = nil
                     if on_kill_cb then on_kill_cb() end
